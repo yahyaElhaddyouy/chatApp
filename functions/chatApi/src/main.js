@@ -1,4 +1,4 @@
-import {
+const {
   Client,
   Account,
   Databases,
@@ -6,13 +6,15 @@ import {
   ID,
   Permission,
   Role,
-  Query
-} from "node-appwrite";
+  Query,
+} = require("node-appwrite");
 
 function json(res, body, status = 200) {
   return res.json(body, status);
 }
+
 const nowIso = () => new Date().toISOString();
+
 const reqStr = (v, name) => {
   const s = (v ?? "").toString().trim();
   if (!s) throw new Error(`${name} required`);
@@ -21,10 +23,10 @@ const reqStr = (v, name) => {
 
 async function userIdByEmail(users, email) {
   const r = await users.list([Query.equal("email", email)]);
-  return (r.users && r.users[0]) ? r.users[0].$id : null;
+  return r.users && r.users[0] ? r.users[0].$id : null;
 }
 
-export default async ({ req, res, error }) => {
+module.exports = async ({ req, res, log, error }) => {
   try {
     const endpoint = process.env.APPWRITE_ENDPOINT;
     const projectId = process.env.APPWRITE_PROJECT_ID;
@@ -34,6 +36,7 @@ export default async ({ req, res, error }) => {
       return json(res, { ok: false, error: "Missing env vars" }, 500);
     }
 
+    // Appwrite user JWT header (Appwrite passes it when user executes the function)
     const userJwt = req.headers["x-appwrite-user-jwt"] || "";
     if (!userJwt) return json(res, { ok: false, error: "Not authenticated" }, 401);
 
@@ -60,7 +63,7 @@ export default async ({ req, res, error }) => {
       const r = await db.listDocuments(databaseId, membershipsId, [
         Query.equal("conversationId", conversationId),
         Query.equal("userId", userId),
-        Query.limit(1)
+        Query.limit(1),
       ]);
       return (r.documents || []).length > 0;
     };
@@ -68,13 +71,13 @@ export default async ({ req, res, error }) => {
     const membersOfConversation = async (conversationId) => {
       const r = await db.listDocuments(databaseId, membershipsId, [
         Query.equal("conversationId", conversationId),
-        Query.limit(200)
+        Query.limit(200),
       ]);
-      return (r.documents || []).map(d => d.userId);
+      return (r.documents || []).map((d) => d.userId);
     };
 
-    const convReadPerms = (userIds) => userIds.map(uid => Permission.read(Role.user(uid)));
-    const msgReadPerms = (userIds) => userIds.map(uid => Permission.read(Role.user(uid)));
+    const convReadPerms = (userIds) => userIds.map((uid) => Permission.read(Role.user(uid)));
+    const msgReadPerms = (userIds) => userIds.map((uid) => Permission.read(Role.user(uid)));
 
     // ---------- createGroup ----------
     if (action === "createGroup") {
@@ -88,6 +91,7 @@ export default async ({ req, res, error }) => {
         const uid = await userIdByEmail(users, e);
         if (uid) memberIds.add(uid);
       }
+
       const ids = Array.from(memberIds);
       const createdAt = nowIso();
 
@@ -103,12 +107,12 @@ export default async ({ req, res, error }) => {
           createdAt,
           lastMessageText: "",
           lastMessageAt: "",
-          lastMessageSenderId: ""
+          lastMessageSenderId: "",
         },
         [
           ...convReadPerms(ids),
           Permission.update(Role.user(myUserId)),
-          Permission.delete(Role.user(myUserId))
+          Permission.delete(Role.user(myUserId)),
         ]
       );
 
@@ -125,12 +129,9 @@ export default async ({ req, res, error }) => {
             lastReadAt: "",
             archived: false,
             pinned: false,
-            mute: false
+            mute: false,
           },
-          [
-            Permission.read(Role.user(uid)),
-            Permission.update(Role.user(uid))
-          ]
+          [Permission.read(Role.user(uid)), Permission.update(Role.user(uid))]
         );
       }
 
@@ -144,12 +145,18 @@ export default async ({ req, res, error }) => {
       if (!otherUserId) return json(res, { ok: false, error: "User not found" }, 404);
       if (otherUserId === myUserId) return json(res, { ok: false, error: "Cannot DM yourself" }, 400);
 
-      // reuse if exists (simple MVP scan)
-      const myM = await db.listDocuments(databaseId, membershipsId, [Query.equal("userId", myUserId), Query.limit(200)]);
-      const myConvIds = new Set((myM.documents || []).map(d => d.conversationId));
+      // simple reuse if exists
+      const myM = await db.listDocuments(databaseId, membershipsId, [
+        Query.equal("userId", myUserId),
+        Query.limit(200),
+      ]);
+      const myConvIds = new Set((myM.documents || []).map((d) => d.conversationId));
 
-      const otherM = await db.listDocuments(databaseId, membershipsId, [Query.equal("userId", otherUserId), Query.limit(200)]);
-      const shared = (otherM.documents || []).find(d => myConvIds.has(d.conversationId));
+      const otherM = await db.listDocuments(databaseId, membershipsId, [
+        Query.equal("userId", otherUserId),
+        Query.limit(200),
+      ]);
+      const shared = (otherM.documents || []).find((d) => myConvIds.has(d.conversationId));
 
       if (shared) {
         const existing = await db.getDocument(databaseId, conversationsId, shared.conversationId);
@@ -171,12 +178,12 @@ export default async ({ req, res, error }) => {
           createdAt,
           lastMessageText: "",
           lastMessageAt: "",
-          lastMessageSenderId: ""
+          lastMessageSenderId: "",
         },
         [
           ...convReadPerms(ids),
           Permission.update(Role.user(myUserId)),
-          Permission.delete(Role.user(myUserId))
+          Permission.delete(Role.user(myUserId)),
         ]
       );
 
@@ -193,12 +200,9 @@ export default async ({ req, res, error }) => {
             lastReadAt: "",
             archived: false,
             pinned: false,
-            mute: false
+            mute: false,
           },
-          [
-            Permission.read(Role.user(uid)),
-            Permission.update(Role.user(uid))
-          ]
+          [Permission.read(Role.user(uid)), Permission.update(Role.user(uid))]
         );
       }
 
@@ -229,18 +233,15 @@ export default async ({ req, res, error }) => {
           createdAt,
           status: "sent",
           deliveredAt: "",
-          readAt: ""
+          readAt: "",
         },
-        [
-          ...msgReadPerms(memberIds),
-          Permission.delete(Role.user(myUserId))
-        ]
+        [...msgReadPerms(memberIds), Permission.delete(Role.user(myUserId))]
       );
 
       await db.updateDocument(databaseId, conversationsId, conversationId, {
         lastMessageText: text,
         lastMessageAt: createdAt,
-        lastMessageSenderId: myUserId
+        lastMessageSenderId: myUserId,
       });
 
       return json(res, { ok: true, message: msg });
@@ -253,8 +254,9 @@ export default async ({ req, res, error }) => {
       const r = await db.listDocuments(databaseId, membershipsId, [
         Query.equal("conversationId", conversationId),
         Query.equal("userId", myUserId),
-        Query.limit(1)
+        Query.limit(1),
       ]);
+
       if (!r.documents || r.documents.length === 0) {
         return json(res, { ok: false, error: "Membership not found" }, 404);
       }
@@ -266,7 +268,7 @@ export default async ({ req, res, error }) => {
 
     return json(res, { ok: false, error: "Unknown action" }, 400);
   } catch (e) {
-    error(e);
-    return json(res, { ok: false, error: String(e?.message || e) }, 500);
+    if (error) error(e);
+    return json(res, { ok: false, error: String(e && e.message ? e.message : e) }, 500);
   }
 };
