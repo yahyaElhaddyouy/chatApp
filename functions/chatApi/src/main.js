@@ -21,6 +21,13 @@ const reqStr = (v, name) => {
   return s;
 };
 
+let membershipSeq = 0;
+const nextMembershipId = () => {
+  membershipSeq = (membershipSeq + 1) % 1000;
+  return Date.now() * 1000 + membershipSeq; // int unique
+};
+
+
 async function userIdByEmail(users, email) {
   const r = await users.list([Query.equal("email", email)]);
   return r.users && r.users[0] ? r.users[0].$id : null;
@@ -100,14 +107,18 @@ module.exports = async ({ req, res, log, error }) => {
         conversationsId,
         ID.unique(),
         {
-          type: "group",
-          title,
-          photoUrl: "",
-          createdBy: myUserId,
-          createdAt,
-          lastMessageText: "",
-          lastMessageAt: "",
-          lastMessageSenderId: "",
+            membershipId: nextMembershipId(),
+            conversationId: conv.$id,
+            userId: String(uid),
+            teamId: 1,
+            role: uid === myUserId ? "admin" : "member",
+            membershipStatus: "active",
+          joinedAt: createdAt,
+          lastModifiedAt: createdAt,
+          lastReadAt: null,
+          mute: null,
+          pinned: false,
+          archived: false
         },
         [
           ...convReadPerms(ids),
@@ -116,24 +127,28 @@ module.exports = async ({ req, res, log, error }) => {
         ]
       );
 
-      for (const uid of ids) {
-        await db.createDocument(
-          databaseId,
-          membershipsId,
-          ID.unique(),
-          {
-            conversationId: conv.$id,
-            userId: String(uid),
-            role: uid === myUserId ? "admin" : "member",
-            joinedAt: createdAt,
-            lastReadAt: "",
-            archived: false,
-            pinned: false,
-            mute: false,
-          },
-          [Permission.read(Role.user(uid)), Permission.update(Role.user(uid))]
-        );
-      }
+     for (const uid of ids) {
+      await db.createDocument(
+        databaseId,
+        membershipsId,
+        ID.unique(),
+        {
+          membershipId: nextMembershipId(),
+          conversationId: conv.$id,
+          userId: String(uid),
+          teamId: 1,
+          role: uid === myUserId ? "admin" : "member",
+          membershipStatus: "active",
+          joinedAt: createdAt,
+          lastModifiedAt: createdAt,
+          lastReadAt: null,
+          mute: null,
+          pinned: false,
+          archived: false
+        },
+        [Permission.read(Role.user(uid)), Permission.update(Role.user(uid))]
+      );
+    }
 
       return json(res, { ok: true, conversation: conv });
     }
