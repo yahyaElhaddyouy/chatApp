@@ -34,15 +34,6 @@ const reqStr = (v, name) => {
   return s;
 };
 
-<<<<<<< HEAD
-let membershipSeq = 0;
-const nextMembershipId = () => {
-  membershipSeq = (membershipSeq + 1) % 1000;
-  return Date.now() * 1000 + membershipSeq; // int unique
-};
-
-
-=======
 /**
  * Generate unique integer membershipId (because your schema requires integer)
  */
@@ -55,7 +46,6 @@ const nextMembershipId = () => {
 /**
  * Find Auth userId by email using Users API
  */
->>>>>>> bf2fe1b (Fix memberships required fields)
 async function userIdByEmail(users, email) {
   const r = await users.list([Query.equal("email", email)]);
   return r.users && r.users[0] ? r.users[0].$id : null;
@@ -167,20 +157,6 @@ module.exports = async ({ req, res, log, error }) => {
         conversationsId,
         ID.unique(),
         {
-<<<<<<< HEAD
-            membershipId: nextMembershipId(),
-            conversationId: conv.$id,
-            userId: String(uid),
-            teamId: 1,
-            role: uid === myUserId ? "admin" : "member",
-            membershipStatus: "active",
-          joinedAt: createdAt,
-          lastModifiedAt: createdAt,
-          lastReadAt: null,
-          mute: null,
-          pinned: false,
-          archived: false
-=======
           type: "group",
           title: title,
           photoUrl: "",
@@ -189,7 +165,6 @@ module.exports = async ({ req, res, log, error }) => {
           lastMessageText: "",
           lastMessageAt: null,
           lastMessageSenderId: null,
->>>>>>> bf2fe1b (Fix memberships required fields)
         },
         [
           ...convReadPerms(ids),
@@ -198,30 +173,6 @@ module.exports = async ({ req, res, log, error }) => {
         ]
       );
 
-<<<<<<< HEAD
-     for (const uid of ids) {
-      await db.createDocument(
-        databaseId,
-        membershipsId,
-        ID.unique(),
-        {
-          membershipId: nextMembershipId(),
-          conversationId: conv.$id,
-          userId: String(uid),
-          teamId: 1,
-          role: uid === myUserId ? "admin" : "member",
-          membershipStatus: "active",
-          joinedAt: createdAt,
-          lastModifiedAt: createdAt,
-          lastReadAt: null,
-          mute: null,
-          pinned: false,
-          archived: false
-        },
-        [Permission.read(Role.user(uid)), Permission.update(Role.user(uid))]
-      );
-    }
-=======
       // Create memberships (must satisfy your required schema)
       for (const uid of ids) {
         const uidStr = String(uid);
@@ -249,7 +200,6 @@ module.exports = async ({ req, res, log, error }) => {
           ]
         );
       }
->>>>>>> bf2fe1b (Fix memberships required fields)
 
       return json(res, { ok: true, conversation: conv });
     }
