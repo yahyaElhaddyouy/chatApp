@@ -123,7 +123,7 @@ module.exports = async ({ req, res, log, error }) => {
           ID.unique(),
           {
             conversationId: conv.$id,
-            userId: uid,
+            userId: String(uid),
             role: uid === myUserId ? "admin" : "member",
             joinedAt: createdAt,
             lastReadAt: "",
@@ -147,7 +147,7 @@ module.exports = async ({ req, res, log, error }) => {
 
       // simple reuse if exists
       const myM = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("userId", myUserId),
+        Query.equal("userId", String(myUserId)),
         Query.limit(200),
       ]);
       const myConvIds = new Set((myM.documents || []).map((d) => d.conversationId));
@@ -253,7 +253,7 @@ module.exports = async ({ req, res, log, error }) => {
 
       const r = await db.listDocuments(databaseId, membershipsId, [
         Query.equal("conversationId", conversationId),
-        Query.equal("userId", myUserId),
+        Query.equal("userId", String(myUserId)),
         Query.limit(1),
       ]);
 
