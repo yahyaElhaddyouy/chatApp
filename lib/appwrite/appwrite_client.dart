@@ -9,7 +9,7 @@ class AppwriteClient {
       .setProject(Environment.appwriteProjectId);
 
   static final Account account = Account(client);
-  static final Databases databases = Databases(client);
   static final Functions functions = Functions(client);
+  static final Databases databases = Databases(client);
   static final Realtime realtime = Realtime(client);
 }
