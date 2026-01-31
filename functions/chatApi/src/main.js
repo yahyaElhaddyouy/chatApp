@@ -6,11 +6,11 @@ const MEMBERSHIPS_COL = "memberships";        // Memberships collection
 const MESSAGES_COL = "messages";              // Messages collection
 
 // Helper to return JSON response
-function json(res, status, body) {
-  if (res) {
-    return res.json(body, status);  // Ensure res is defined
-  }
-  return { error: "Response object not found." };  // Return error if res is undefined
+function json(status, body) {
+  return {
+    statusCode: status,
+    body: JSON.stringify(body)
+  };
 }
 
 // Helper to handle request body JSON parsing
@@ -66,7 +66,7 @@ module.exports = async (context) => {
     // Ensure action is present
     if (!action) {
       console.log("Missing action in request body.");  // Log if action is missing
-      return json(res, 400, { ok: false, error: "MISSING_ACTION" });
+      return json(400, { ok: false, error: "MISSING_ACTION" });
     }
 
     // Log the action for debugging purposes
@@ -78,7 +78,7 @@ module.exports = async (context) => {
 
       // Ensure userId and otherEmail are provided
       if (!otherEmail || !userId) {
-        return json(res, 400, { ok: false, error: "MISSING_FIELDS" });
+        return json(400, { ok: false, error: "MISSING_FIELDS" });
       }
 
       // Find the user by email (using Appwrite's Users API)
@@ -86,14 +86,14 @@ module.exports = async (context) => {
       const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
 
       if (!userList.users || userList.users.length === 0) {
-        return json(res, 404, { ok: false, error: "USER_NOT_FOUND" });
+        return json(404, { ok: false, error: "USER_NOT_FOUND" });
       }
 
       const otherUser = userList.users[0];
 
       // Prevent creating a DM with yourself
       if (userId === otherUser.$id) {
-        return json(res, 400, { ok: false, error: "CANNOT_DM_SELF" });
+        return json(400, { ok: false, error: "CANNOT_DM_SELF" });
       }
 
       // Define conversation permissions
@@ -148,16 +148,16 @@ module.exports = async (context) => {
 
       console.log("Conversation data:", conversation);
       if (!conversation) {
-        return json(res, 404, { ok: false, error: "Conversation not found" });
+        return json(404, { ok: false, error: "Conversation not found" });
       }
 
-      return json(res, 200, { ok: true, conversation, reused: false });
+      return json(200, { ok: true, conversation, reused: false });
     }
 
-    return json(res, 404, { ok: false, error: "UNKNOWN_ACTION", action });
+    return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
 
   } catch (e) {
     console.error("Error processing the request:", e);  // Log error for debugging
-    return json(res, 500, { ok: false, error: e.message });
+    return json(500, { ok: false, error: e.message });
   }
 };
