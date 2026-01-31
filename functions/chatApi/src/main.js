@@ -15,7 +15,6 @@ function json(res, status, body) {
 
 // Helper to handle request body JSON parsing
 async function getBodyJson(req) {
-  // Make sure the incoming request body is parsed into JSON
   if (req.bodyJson && typeof req.bodyJson === "object") return req.bodyJson;
 
   const raw = req.body;
@@ -66,7 +65,7 @@ module.exports = async function (req, res) {
 
     // Ensure the body is correctly parsed
     const body = await getBodyJson(req);
-    console.log("Received request body:", body); // Log the request body to ensure it's received correctly
+    context.log("Received request body:", body);  // Log the request body using context.log
 
     const action = body.action;
     const userId = body.userId; // Expecting this from the frontend
@@ -159,8 +158,3 @@ module.exports = async function (req, res) {
     return res.json({ ok: false, error: e.message }, 500);
   }
 };
-
-
-console.log("Received request body:", body);  // This will log the incoming body
-
-// Continue your logic...
