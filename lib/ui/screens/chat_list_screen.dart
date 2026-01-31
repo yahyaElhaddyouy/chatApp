@@ -72,9 +72,11 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 onPressed: () async {
                   if (emailC.text.isNotEmpty) {
                     final userId =
-                        'USER_ID'; // Replace with the actual logged-in user ID
+                        'USER_ID'; // Replace with actual logged-in user ID
                     final response = await chatService.createDm(
-                        otherEmail: emailC.text, userId: userId);
+                      otherEmail: emailC.text,
+                      userId: userId, // Pass the actual userId
+                    );
 
                     if (response['ok'] == true) {
                       Navigator.pop(ctx, emailC.text); // Close the sheet

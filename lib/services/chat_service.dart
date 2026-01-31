@@ -1,6 +1,7 @@
 import 'dart:convert';
 import '../config/environment.dart';
 import 'appwrite_client.dart';
+import 'package:appwrite/appwrite.dart';
 
 class ChatService {
   // Helper function to send a request to Appwrite Function
@@ -78,13 +79,28 @@ class ChatService {
 
   // Create a new Direct Message (DM)
   Future<Map<String, dynamic>> createDm({
-    required String otherEmail,
-    required String userId,
-  }) async {
-    return _call({
-      "action": "createDm",
-      "otherEmail": otherEmail,
-      "userId": userId,
-    });
+  required String otherEmail,
+  required String userId,
+}) async {
+  final payload = {
+    "action": "createDm",  // Ensure action is passed
+    "otherEmail": otherEmail,
+    "userId": userId,  // Fetch the real userId dynamically
+  };
+
+  return _call(payload);  // Call the function with the payload
+}
+
+
+  // Fetch the logged-in userId from Appwrite Account
+  Future<String?> getUserId() async {
+    try {
+      final account = Account(AppwriteClient.client);
+      final user = await account.get(); // Get the current logged-in user
+      return user.$id;  // Return the user ID
+    } catch (e) {
+      print('Error fetching user info: $e');
+      return null;
+    }
   }
 }

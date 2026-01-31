@@ -30,105 +30,67 @@ function genIntId() {
 
 module.exports = async (context) => {
   try {
-    const body = parseBody(context);
-    context.log("REQUEST BODY:", body);
+    // Retrieve the request body
+    const body = await getBodyJson(context.req);  // This will fetch the request body
+    context.log("Received request body:", body);  // Log the body for debugging
 
     const { action, otherEmail, userId } = body;
 
+    // Ensure action is present
     if (!action) {
-      return json(400, { ok: false, error: "MISSING_ACTION" });
+      context.log("Missing action in request body.");  // Log if action is missing
+      return json(context, 400, { ok: false, error: "MISSING_ACTION" });
     }
 
-    const client = new sdk.Client()
-      .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
-      .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
-      .setKey(process.env.APPWRITE_API_KEY);
+    // Log the action for debugging purposes
+    context.log("Action received:", action);
 
-    const db = new sdk.Databases(client);
-    const users = new sdk.Users(client);
-
-    // ================= CREATE DM =================
+    // Proceed with action processing
     if (action === "createDm") {
-      if (!userId || !otherEmail) {
-        return json(400, { ok: false, error: "MISSING_FIELDS" });
+      const nowIso = new Date().toISOString();
+
+      // Ensure userId and otherEmail are provided
+      if (!otherEmail || !userId) {
+        return json(context, 400, { ok: false, error: "MISSING_FIELDS" });
       }
 
-      const userList = await users.list([
-        sdk.Query.equal("email", otherEmail),
-        sdk.Query.limit(1),
-      ]);
+      // Find the user by email (using Appwrite's Users API)
+      const users = new sdk.Users(client);
+      const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
 
-      if (!userList.users.length) {
-        return json(404, { ok: false, error: "USER_NOT_FOUND" });
+      if (!userList.users || userList.users.length === 0) {
+        return json(context, 404, { ok: false, error: "USER_NOT_FOUND" });
       }
 
       const otherUser = userList.users[0];
 
-      if (otherUser.$id === userId) {
-        return json(400, { ok: false, error: "CANNOT_DM_SELF" });
+      // Prevent creating a DM with yourself
+      if (userId === otherUser.$id) {
+        return json(context, 400, { ok: false, error: "CANNOT_DM_SELF" });
       }
 
-      const now = new Date().toISOString();
+      // Create the conversation
+      const conversation = await db.createDocument(DATABASE_ID, CONVERSATIONS_COL, sdk.ID.unique(), {
+        type: "dm",
+        createdBy: userId,
+        createdAt: nowIso,
+        lastMessageText: "",
+        lastMessageAt: null,
+        lastMessageSenderId: null,
+      }, perms);
 
-      const permissions = [
-        `read("user:${userId}")`,
-        `read("user:${otherUser.$id}")`,
-        `update("user:${userId}")`,
-        `update("user:${otherUser.$id}")`,
-      ];
+      // Create membership documents for both users
+      await createMembership(userId, conversation.$id, nowIso);
+      await createMembership(otherUser.$id, conversation.$id, nowIso);
 
-      const conversation = await db.createDocument(
-        DATABASE_ID,
-        CONVERSATIONS_COL,
-        sdk.ID.unique(),
-        {
-          type: "dm",
-          createdBy: userId,
-          createdAt: now,
-          lastMessageText: "",
-        },
-        permissions
-      );
-
-      await db.createDocument(
-        DATABASE_ID,
-        MEMBERSHIPS_COL,
-        sdk.ID.unique(),
-        {
-          membershipId: genIntId(),
-          teamId: 1,
-          role: "member",
-          membershipStatus: "active",
-          joinedAt: now,
-          conversationId: conversation.$id,
-          userId,
-        },
-        permissions
-      );
-
-      await db.createDocument(
-        DATABASE_ID,
-        MEMBERSHIPS_COL,
-        sdk.ID.unique(),
-        {
-          membershipId: genIntId(),
-          teamId: 1,
-          role: "member",
-          membershipStatus: "active",
-          joinedAt: now,
-          conversationId: conversation.$id,
-          userId: otherUser.$id,
-        },
-        permissions
-      );
-
-      return json(200, { ok: true, conversation });
+      return json(context, 200, { ok: true, conversation, reused: false });
     }
 
-    return json(404, { ok: false, error: "UNKNOWN_ACTION" });
+    return json(context, 404, { ok: false, error: "UNKNOWN_ACTION", action });
 
-  } catch (err) {
-    context.error(err);
-    return json(500, { ok: false, error: err.message });
+  } catch (e) {
+    context.error("Error processing the request:", e);
+    return json(context, 500, { ok: false, error: e.message });
   }
 };
+
