@@ -157,7 +157,7 @@ module.exports = async (context) => {
     return json(res, 404, { ok: false, error: "UNKNOWN_ACTION", action });
 
   } catch (e) {
-    log("Error processing the request:", e);
+    log.error("Error processing the request:", e);
     return json(res, 500, { ok: false, error: e.message });
   }
 };
