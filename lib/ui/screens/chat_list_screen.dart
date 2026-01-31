@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../state/session_provider.dart';
 import '../../services/chat_service.dart';
 import 'chat_screen.dart';
 
@@ -41,28 +40,72 @@ class _ChatListScreenState extends State<ChatListScreen> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _loadConversations();
+  // Open a bottom sheet for the user to input email and create a new DM
+  Future<void> _openNewDmSheet() async {
+    final emailC = TextEditingController();
+
+    await showModalBottomSheet<String>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 16, right: 16,
+            top: 12,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("New DM", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailC,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: "Enter email"),
+              ),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: () async {
+                  if (emailC.text.isNotEmpty) {
+                    final response = await chatService.createDm(otherEmail: emailC.text);
+                    if (response['ok'] == true) {
+                      Navigator.pop(ctx, emailC.text); // Close the sheet
+                      // Handle success
+                    } else {
+                      // Show failure snackbar
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(response['error'] ?? 'Failed to create DM'),
+                      ));
+                    }
+                  }
+                },
+                child: const Text("Create DM"),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final session = context.watch<SessionProvider>();
-
     return Scaffold(
       appBar: AppBar(
         title: const Text("Chats"),
         actions: [
           IconButton(
-            onPressed: () async => session.logout(),
+            onPressed: () {
+              // Add your logout functionality here if needed
+            },
             icon: const Icon(Icons.logout),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _openNewDmSheet,
+        onPressed: _openNewDmSheet, // Open the bottom sheet to create new DM
         child: const Icon(Icons.add),
       ),
       body: loadingConversations
@@ -91,48 +134,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     );
                   },
                 ),
-    );
-  }
-
-  // Open a new DM screen to create a new conversation
-  Future<void> _openNewDmSheet() async {
-    final emailC = TextEditingController();
-
-    await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16, right: 16,
-            top: 12,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text("New DM", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailC,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: "Enter email"),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () {
-                  if (emailC.text.isNotEmpty) {
-                    // Create new DM
-                    Navigator.pop(ctx, emailC.text);
-                  }
-                },
-                child: const Text("Create DM"),
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 }

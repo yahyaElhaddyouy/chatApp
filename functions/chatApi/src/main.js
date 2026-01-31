@@ -67,6 +67,9 @@ module.exports = async function (req, res) {
     const action = body.action;
     const userId = body.userId; // The user is expected to be authenticated
 
+    // Log request body
+    console.log("Received request body:", body);
+
     // Check if the action is valid
     if (!action) return json(res, 400, { ok: false, code: "MISSING_ACTION" });
 
@@ -112,6 +115,13 @@ module.exports = async function (req, res) {
         lastMessageSenderId: null,
       }, perms);
 
+      // Log created conversation
+      console.log("Created conversation:", conversation);
+
+      if (!conversation) {
+        return json(res, 404, { ok: false, error: "Conversation not found" });
+      }
+
       // Create membership for the first user
       const teamIdInt = 1; // Integer required
       const roleValue = "member";
@@ -142,17 +152,8 @@ module.exports = async function (req, res) {
         archived: false,
       }, perms);
 
-      console.log("Conversation data:", conversation);
-      if (!conversation) {
-        return json(res, 404, { ok: false, error: "Conversation not found" });
-      }  // Log the conversation
       return json(res, 200, { ok: true, conversation, reused: false });
     }
-
-    // Ensure conversation is valid before returning
-    console.log("Conversation data:", conversation);  // Log the conversation data
-
-
 
     // Handle Send Message action
     if (action === "sendMessage") {
@@ -195,8 +196,6 @@ module.exports = async function (req, res) {
       return json(res, 200, { ok: true, message });
     }
 
-
-
     // Handle Mark Read action
     if (action === "markRead") {
       const conversationId = body.conversationId;
@@ -216,7 +215,7 @@ module.exports = async function (req, res) {
     // Return 404 if the action is not recognized
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
-    console.error(e);  // Log the error
+    console.error("Error in function:", e);  // Log the error
     return res.json({ ok: false, error: e.message }, 500);  // Handle errors
   }
 };

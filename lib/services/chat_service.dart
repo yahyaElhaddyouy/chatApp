@@ -9,85 +9,74 @@ class ChatService {
       body: jsonEncode(payload), // ✅ must be String in your SDK version
     );
 
-    // ✅ Dans ta version: responseBody est NON-null (String)
-    final raw = exec.responseBody.toString().trim();
-
+    final raw = (exec.responseBody ?? '').toString().trim();
     if (raw.isEmpty) return <String, dynamic>{};
 
-    dynamic decoded;
-    try {
-      decoded = jsonDecode(raw);
-    } catch (_) {
-      // Si le backend renvoie du texte non-JSON, on l'encapsule
-      return <String, dynamic>{'data': raw};
-    }
-
+    final decoded = jsonDecode(raw);
     if (decoded is Map<String, dynamic>) return decoded;
 
-    // Si la function renvoie une liste / string / int, on encapsule
-    return <String, dynamic>{'data': decoded};
+    // If function returns non-object JSON
+    return <String, dynamic>{"data": decoded};
   }
 
-  Future<Map<String, dynamic>> createDm({required String otherEmail}) async {
+  // Fetch all conversations for the current user
+  Future<Map<String, dynamic>> listConversations() async {
     return _call({
-      'action': 'createDm',
-      'databaseId': Environment.databaseId,
-      'conversationsCollectionId': Environment.conversationsCollectionId,
-      'membershipsCollectionId': Environment.membershipsCollectionId,
-      'messagesCollectionId': Environment.messagesCollectionId,
-      'otherEmail': otherEmail.trim(),
+      "action": "listConversations",
+      "databaseId": Environment.databaseId,
+      "membershipsCollectionId": Environment.membershipsCollectionId,
     });
   }
 
+  // Fetch all messages for a specific conversation
+  Future<Map<String, dynamic>> listMessages({
+    required String conversationId,
+  }) async {
+    return _call({
+      "action": "listMessages",
+      "databaseId": Environment.databaseId,
+      "messagesCollectionId": Environment.messagesCollectionId,
+      "conversationId": conversationId,
+    });
+  }
+
+  // Send a message to a conversation
   Future<Map<String, dynamic>> sendMessage({
     required String conversationId,
     required String text,
   }) async {
-    final cleaned = text.trim();
-    if (cleaned.isEmpty) {
-      return <String, dynamic>{'ok': false, 'code': 'EMPTY_TEXT'};
-    }
-
     return _call({
-      'action': 'sendMessage',
-      'databaseId': Environment.databaseId,
-      'conversationsCollectionId': Environment.conversationsCollectionId,
-      'membershipsCollectionId': Environment.membershipsCollectionId,
-      'messagesCollectionId': Environment.messagesCollectionId,
-      'conversationId': conversationId,
-      'text': cleaned,
+      "action": "sendMessage",
+      "databaseId": Environment.databaseId,
+      "conversationsCollectionId": Environment.conversationsCollectionId,
+      "membershipsCollectionId": Environment.membershipsCollectionId,
+      "messagesCollectionId": Environment.messagesCollectionId,
+      "conversationId": conversationId,
+      "text": text,
     });
   }
 
+  // Mark messages as read in a conversation
   Future<Map<String, dynamic>> markRead({required String conversationId}) async {
     return _call({
-      'action': 'markRead',
-      'databaseId': Environment.databaseId,
-      'conversationsCollectionId': Environment.conversationsCollectionId,
-      'membershipsCollectionId': Environment.membershipsCollectionId,
-      'messagesCollectionId': Environment.messagesCollectionId,
-      'conversationId': conversationId,
+      "action": "markRead",
+      "databaseId": Environment.databaseId,
+      "conversationsCollectionId": Environment.conversationsCollectionId,
+      "membershipsCollectionId": Environment.membershipsCollectionId,
+      "messagesCollectionId": Environment.messagesCollectionId,
+      "conversationId": conversationId,
     });
   }
 
-  // Fetch all conversations for the current user
-Future<Map<String, dynamic>> listConversations() async {
-  return _call({
-    "action": "listConversations",
-    "databaseId": Environment.databaseId,
-    "membershipsCollectionId": Environment.membershipsCollectionId,
-  });
-}
-
-// Fetch all messages for a specific conversation
-Future<Map<String, dynamic>> listMessages({
-  required String conversationId,
-}) async {
-  return _call({
-    "action": "listMessages",
-    "databaseId": Environment.databaseId,
-    "messagesCollectionId": Environment.messagesCollectionId,
-    "conversationId": conversationId,
-  });
-}
+  // Create a new Direct Message (DM)
+  Future<Map<String, dynamic>> createDm({required String otherEmail}) async {
+    return _call({
+      "action": "createDm",
+      "databaseId": Environment.databaseId,
+      "conversationsCollectionId": Environment.conversationsCollectionId,
+      "membershipsCollectionId": Environment.membershipsCollectionId,
+      "messagesCollectionId": Environment.messagesCollectionId,
+      "otherEmail": otherEmail,
+    });
+  }
 }
