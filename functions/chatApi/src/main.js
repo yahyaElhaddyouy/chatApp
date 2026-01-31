@@ -208,3 +208,6 @@ module.exports = async function (req, res) {
     return res.json({ ok: false, error: e.message }, 500);  // Handle errors
   }
 };
+
+console.log(memberships); // Print the memberships list
+console.log(conversations);
