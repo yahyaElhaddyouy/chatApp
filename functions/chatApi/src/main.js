@@ -8,8 +8,9 @@ const MESSAGES_COL = "messages";              // Messages collection
 // Helper to return JSON response
 function json(res, status, body) {
   if (res) {
-    return res.json(body, status);  // Ensure res is defined
+    return res.json(body, status);  // Ensure res is defined and passed properly
   }
+  console.error("Response object not defined");  // Log the error if 'res' is undefined
   return { error: "Response object not found." };  // Return error if res is undefined
 }
 
@@ -65,7 +66,7 @@ module.exports = async function (req, res) {
 
     // Ensure the body is correctly parsed
     const body = await getBodyJson(req);
-    context.log("Received request body:", body);  // Log the request body using context.log
+    console.log("Received request body:", body);  // Log the request body using console.log
 
     const action = body.action;
     const userId = body.userId; // Expecting this from the frontend
