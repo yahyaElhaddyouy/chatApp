@@ -5,14 +5,6 @@ const CONVERSATIONS_COL = "conversations";    // Conversations collection
 const MEMBERSHIPS_COL = "memberships";        // Memberships collection
 const MESSAGES_COL = "messages";              // Messages collection
 
-// Initialize the client for Users API and Database
-const client = new sdk.Client();
-client.setEndpoint('https://[YOUR_APPWRITE_ENDPOINT]').setProject('[YOUR_PROJECT_ID]').setKey(process.env.APPWRITE_API_KEY);
-
-// Initialize the database and users services
-const db = new sdk.Databases(client);
-const users = new sdk.Users(client);
-
 // Helper to return JSON response
 function json(status, body) {
   return {
@@ -50,10 +42,13 @@ module.exports = async (context) => {
 
     // Initialize the client for Users API and Database
     const client = new sdk.Client();
-    client.setEndpoint('https://nyc.cloud.appwrite.io/v1').setProject('697b95cd000a52d5cf5b').setKey(process.env.APPWRITE_API_KEY);
+    client.setEndpoint('https://nyc.cloud.appwrite.io/v1');
+    client.setProject('697b95cd000a52d5cf5b');
+    client.setKey(process.env.APPWRITE_API_KEY);
 
-    // Initialize the database service
+    // Initialize the database and users services
     const db = new sdk.Databases(client);
+    const users = new sdk.Users(client);
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
@@ -81,7 +76,7 @@ module.exports = async (context) => {
       }
 
       // 1. Find the user by email (using Appwrite's Users API)
-      const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
+      const userList = await users.list(encodeURIComponent(otherEmail), 1);
 
       if (!userList.users || userList.users.length === 0) {
         context.log("User not found with email:", otherEmail);

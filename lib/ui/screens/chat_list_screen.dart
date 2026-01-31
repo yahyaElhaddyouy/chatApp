@@ -18,7 +18,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final chatService = ChatService();
   List<Map<String, dynamic>> conversations = [];
   bool loadingConversations = false;
-  
+
+  @override
+  void initState() {
+    super.initState();
+    _loadConversations();  // Charge les conversations dès que l'écran est initialisé
+  }
 
   // Fetch conversations for the current user
   Future<void> _loadConversations() async {
@@ -26,7 +31,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
       loadingConversations = true;
     });
 
-    
     final res = await chatService.listConversations();
 
     setState(() {
@@ -36,8 +40,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (res['ok'] == true) {
       final conversationsList = res['conversations'] as List;
       setState(() {
-        conversations =
-            conversationsList.map((e) => e as Map<String, dynamic>).toList();
+        conversations = conversationsList.map((e) => e as Map<String, dynamic>).toList();
       });
     } else {
       // Handle error (showing snackbar)
@@ -46,24 +49,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ));
     }
   }
+
   bool loading = false;
   String? err;
 
   Future<void> _logout() async {
-  setState(() {
-    loading = true;
-    err = null;
-  });
+    setState(() {
+      loading = true;
+      err = null;
+    });
 
-  try {
-    await context.read<SessionProvider>().logout();
-  } catch (e) {
-    setState(() => err = e.toString());
-  } finally {
-    if (mounted) setState(() => loading = false);
+    try {
+      await context.read<SessionProvider>().logout();
+    } catch (e) {
+      setState(() => err = e.toString());
+    } finally {
+      if (mounted) setState(() => loading = false);
+    }
   }
-}
-
 
   // Open a bottom sheet for the user to input email and create a new DM
   Future<void> _openNewDmSheet() async {
@@ -105,12 +108,13 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     );
 
                     if (response['ok'] == true) {
-                      Navigator.pop(ctx, emailC.text); // Close the sheet
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      // Close the sheet
+                      Navigator.pop(ctx, emailC.text);
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                         content: Text('DM created successfully'),
                       ));
                     } else {
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
                         content:
                             Text(response['error'] ?? 'Failed to create DM'),
                       ));
@@ -142,10 +146,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
             ),
           ),
           IconButton(
-            onPressed: () {
-              // Add your logout functionality here if needed
-              _logout();
-            },
+            onPressed: _logout,
             icon: const Icon(Icons.logout),
           ),
         ],
