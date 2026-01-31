@@ -22,13 +22,32 @@ async function getBodyJson(req) {
   }
 }
 
-async function findMembership(db, databaseId, membershipsCol, conversationId, userId) {
+/**
+ * membershipId must be integer (required in your schema).
+ * We generate a likely-unique integer using timestamp + random.
+ * Must fit in JS safe integer and Appwrite integer range.
+ */
+function genIntId() {
+  // 13-digit timestamp + 3-digit random => up to 16 digits, still within 9.22e18
+  const ts = Date.now(); // ~13 digits
+  const rnd = Math.floor(Math.random() * 1000); // 0..999
+  return ts * 1000 + rnd; // integer
+}
+
+async function assertMember(db, databaseId, membershipsCol, conversationId, userId) {
   const list = await db.listDocuments(databaseId, membershipsCol, [
     sdk.Query.equal("conversationId", conversationId),
     sdk.Query.equal("userId", userId),
     sdk.Query.limit(1),
   ]);
-  return list.documents?.[0] || null;
+
+  if (!list.documents || list.documents.length === 0) {
+    const err = new Error("NOT_A_MEMBER");
+    err.code = 403;
+    throw err;
+  }
+
+  return list.documents[0];
 }
 
 module.exports = async ({ req, res, log, error }) => {
@@ -54,21 +73,24 @@ module.exports = async ({ req, res, log, error }) => {
       return json(res, 400, { ok: false, code: "MISSING_COLLECTION_IDS" });
     }
 
-    // Provided by Appwrite when calling createExecution while logged-in
+    // Appwrite header set when using createExecution while logged-in
     const authUserId = asString(
       req.headers?.["x-appwrite-user-id"] || req.headers?.["X-Appwrite-User-Id"]
     ).trim();
 
     if (!authUserId) return json(res, 401, { ok: false, code: "NO_AUTH_USER" });
 
-    // =========================
-    // createDm
-    // =========================
+    // ========= ACTION: createDm =========
     if (action === "createDm") {
       const otherEmail = asString(body.otherEmail).trim().toLowerCase();
       if (!otherEmail) return json(res, 400, { ok: false, code: "MISSING_OTHER_EMAIL" });
 
-      const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
+      // Find other user by email
+      const userList = await users.list([
+        sdk.Query.equal("email", otherEmail),
+        sdk.Query.limit(1),
+      ]);
+
       if (!userList.users || userList.users.length === 0) {
         return json(res, 404, { ok: false, code: "USER_NOT_FOUND" });
       }
@@ -80,6 +102,7 @@ module.exports = async ({ req, res, log, error }) => {
 
       const nowIso = new Date().toISOString();
 
+      // Conversation permissions
       const perms = [
         `read("user:${authUserId}")`,
         `read("user:${otherUser.$id}")`,
@@ -89,6 +112,7 @@ module.exports = async ({ req, res, log, error }) => {
         `delete("user:${otherUser.$id}")`,
       ];
 
+      // Create conversation (your schema shows teamId is string and nullable, so keep null)
       const conversation = await db.createDocument(
         databaseId,
         conversationsCol,
@@ -97,7 +121,7 @@ module.exports = async ({ req, res, log, error }) => {
           type: "dm",
           title: "",
           photoUrl: "",
-          teamId: null, // keep if your schema allows null
+          teamId: null,
           createdBy: authUserId,
           createdAt: nowIso,
           lastMessageText: "",
@@ -107,30 +131,47 @@ module.exports = async ({ req, res, log, error }) => {
         perms
       );
 
-      // memberships (keep them minimal — after you removed hard required fields / set defaults)
+      // Create memberships — MUST satisfy required fields in your memberships schema
+      const teamIdInt = 1; // integer, min 1
+      const roleValue = "member";
+      const statusValue = "active";
+
+      // membership for me
       await db.createDocument(
         databaseId,
         membershipsCol,
         sdk.ID.unique(),
         {
-          conversationId: conversation.$id,
-          userId: authUserId,
-          joinedAt: nowIso,
-          lastReadAt: nowIso,
-          // role, membershipStatus, teamId, membershipId should have defaults or be optional
+          membershipId: genIntId(),          // ✅ integer required
+          teamId: teamIdInt,                // ✅ integer required
+          role: roleValue,                  // ✅ enum required
+          membershipStatus: statusValue,    // ✅ enum required
+          joinedAt: nowIso,                 // ✅ datetime required
+          lastReadAt: nowIso,               // optional but useful
+          conversationId: conversation.$id,  // string
+          userId: authUserId,               // ✅ string required
+          pinned: false,
+          archived: false,
         },
         perms
       );
 
+      // membership for other user
       await db.createDocument(
         databaseId,
         membershipsCol,
         sdk.ID.unique(),
         {
+          membershipId: genIntId(),          // ✅ integer required
+          teamId: teamIdInt,                // ✅ integer required
+          role: roleValue,                  // ✅ enum required
+          membershipStatus: statusValue,    // ✅ enum required
+          joinedAt: nowIso,                 // ✅ datetime required
+          lastReadAt: null,
           conversationId: conversation.$id,
           userId: otherUser.$id,
-          joinedAt: nowIso,
-          lastReadAt: null,
+          pinned: false,
+          archived: false,
         },
         perms
       );
@@ -138,54 +179,69 @@ module.exports = async ({ req, res, log, error }) => {
       return json(res, 200, { ok: true, conversation, reused: false });
     }
 
-    // =========================
-    // sendMessage
-    // =========================
+    // ========= ACTION: sendMessage =========
     if (action === "sendMessage") {
       const conversationId = asString(body.conversationId).trim();
       const text = asString(body.text).trim();
+
       if (!conversationId || !text) return json(res, 400, { ok: false, code: "MISSING_FIELDS" });
       if (text.length > 2000) return json(res, 400, { ok: false, code: "TEXT_TOO_LONG" });
 
-      const member = await findMembership(db, databaseId, membershipsCol, conversationId, authUserId);
-      if (!member) return json(res, 403, { ok: false, code: "NOT_A_MEMBER" });
+      // Must be member
+      await assertMember(db, databaseId, membershipsCol, conversationId, authUserId);
 
+      // Get conversation (to reuse permissions)
       const convo = await db.getDocument(databaseId, conversationsCol, conversationId);
+
       const nowIso = new Date().toISOString();
 
+      // IMPORTANT: your messages schema currently requires integers for messageId, conversationId, senderId.
+      // If you did NOT change schema yet, this will fail.
+      // Best: change messages.conversationId and messages.senderId to string, and remove messageId required.
       const message = await db.createDocument(
         databaseId,
         messagesCol,
         sdk.ID.unique(),
         {
-          conversationId,        // ✅ string
-          senderId: authUserId,  // ✅ string
+          // If your schema still requires messageId integer:
+          messageId: genIntId(),
+          // If your schema still requires conversationId integer, you MUST change it to string.
+          // Here we assume you will change it to string:
+          conversationId: conversationId,
+          // Same for senderId: should be string in schema
+          senderId: authUserId,
           text,
-          createdAt: nowIso,     // datetime in schema
+          createdAt: nowIso,
         },
         convo.$permissions
       );
 
+      // Update conversation
       await db.updateDocument(databaseId, conversationsCol, conversationId, {
         lastMessageText: text,
         lastMessageAt: nowIso,
         lastMessageSenderId: authUserId,
       });
 
+      // Update member lastReadAt
+      const member = await assertMember(db, databaseId, membershipsCol, conversationId, authUserId);
+      await db.updateDocument(databaseId, membershipsCol, member.$id, {
+        lastReadAt: nowIso,
+        lastModifiedAt: nowIso,
+      });
+
       return json(res, 200, { ok: true, message });
     }
 
-    // =========================
-    // markRead
-    // =========================
+    // ========= ACTION: markRead =========
     if (action === "markRead") {
       const conversationId = asString(body.conversationId).trim();
       if (!conversationId) return json(res, 400, { ok: false, code: "MISSING_CONVERSATION_ID" });
 
-      const member = await findMembership(db, databaseId, membershipsCol, conversationId, authUserId);
-      if (!member) return json(res, 403, { ok: false, code: "NOT_A_MEMBER" });
-
       const nowIso = new Date().toISOString();
+
+      const member = await assertMember(db, databaseId, membershipsCol, conversationId, authUserId);
+
       await db.updateDocument(databaseId, membershipsCol, member.$id, {
         lastReadAt: nowIso,
         lastModifiedAt: nowIso,
@@ -196,7 +252,8 @@ module.exports = async ({ req, res, log, error }) => {
 
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
-    const msg = String(e);
-    return json(res, 500, { ok: false, error: msg });
+    error(String(e));
+    const status = e && typeof e === "object" && e.code ? e.code : 500;
+    return json(res, status, { ok: false, error: String(e) });
   }
 };
