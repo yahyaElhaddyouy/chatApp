@@ -59,7 +59,7 @@ module.exports = async (context) => {
 
     // Initialize the client for Users API
     const client = new sdk.Client();
-    client.setEndpoint('https://cloud.appwrite.io/v1').setProject('697baca3000c020a5b31');
+    client.setEndpoint('https://cloud.appwrite.io/v1').setProject('697baca3000c020a5b31').setKey(process.env.APPWRITE_API_KEY);
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
@@ -80,12 +80,20 @@ module.exports = async (context) => {
     if (action === "createDm") {
       const nowIso = new Date().toISOString();
 
-      // Ensure userId and otherUserId are provided
-      if (!body.otherUserId || !userId) {
+      // Ensure userId and otherEmail are provided
+      if (!otherEmail || !userId) {
         return json(400, { ok: false, error: "MISSING_FIELDS" });
       }
 
-      const otherUser = { $id: body.otherUserId };
+      // Find the user by email (using Appwrite's Users API)
+      const users = new sdk.Users(client);
+      const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
+
+      if (!userList.users || userList.users.length === 0) {
+        return json(404, { ok: false, error: "USER_NOT_FOUND" });
+      }
+
+      const otherUser = userList.users[0];
 
       // Prevent creating a DM with yourself
       if (userId === otherUser.$id) {
