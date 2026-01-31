@@ -5,13 +5,6 @@ const CONVERSATIONS_COL = "conversations";    // Conversations collection
 const MEMBERSHIPS_COL = "memberships";        // Memberships collection
 const MESSAGES_COL = "messages";              // Messages collection
 
-// Initialize the client for Users API and Database
-const client = new sdk.Client();
-client.setEndpoint('https://nyc.cloud.appwrite.io/v1').setProject('697b95cd000a52d5cf5b').setKey(process.env.APPWRITE_API_KEY);
-
-// Initialize the database service
-const db = new sdk.Databases(client);
-
 // Helper to return JSON response
 function json(status, body) {
   return {
@@ -111,25 +104,7 @@ module.exports = async (context) => {
         sdk.Query.equal("\$id", conversationIds),
       ]);
 
-      // Adding 'title' (other user name) to each conversation
-      const updatedConversations = await Promise.all(conversations.documents.map(async (conversation) => {
-        // Find the other user in the membership
-        const otherUserMembership = memberships.documents.find(m => m.conversationId === conversation.$id && m.userId !== currentUserId);
-        if (otherUserMembership) {
-          // Fetch the other user info
-          const otherUser = await users.get(otherUserMembership.userId);
-          return {
-            $id: conversation.$id,
-            title: otherUser.name || otherUser.email,  // Add the other user's name as the title
-            lastMessageText: conversation.lastMessageText || 'No messages',
-            lastMessageAt: conversation.lastMessageAt || null,
-          };
-        }
-        return null;
-      }));
-
-      // Filter out null values (in case no other user found)
-      return json(200, { ok: true, conversations: updatedConversations.filter(c => c !== null) });
+      return json(200, { ok: true, conversations: conversations.documents });
     }
 
     if (action === "createDm") {

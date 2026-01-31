@@ -1,5 +1,6 @@
 import 'package:appwrite/appwrite.dart';
 import 'package:chat_app_cloud/services/appwrite_client.dart';
+import 'package:chat_app_cloud/state/session_provider.dart';
 import 'package:flutter/material.dart';
 import '../../services/chat_service.dart';
 import 'chat_screen.dart';
@@ -17,6 +18,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final chatService = ChatService();
   List<Map<String, dynamic>> conversations = [];
   bool loadingConversations = false;
+  
 
   // Fetch conversations for the current user
   Future<void> _loadConversations() async {
@@ -24,6 +26,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
       loadingConversations = true;
     });
 
+    
     final res = await chatService.listConversations();
 
     setState(() {
@@ -43,6 +46,24 @@ class _ChatListScreenState extends State<ChatListScreen> {
       ));
     }
   }
+  bool loading = false;
+  String? err;
+
+  Future<void> _logout() async {
+  setState(() {
+    loading = true;
+    err = null;
+  });
+
+  try {
+    await context.read<SessionProvider>().logout();
+  } catch (e) {
+    setState(() => err = e.toString());
+  } finally {
+    if (mounted) setState(() => loading = false);
+  }
+}
+
 
   // Open a bottom sheet for the user to input email and create a new DM
   Future<void> _openNewDmSheet() async {
@@ -123,6 +144,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
           IconButton(
             onPressed: () {
               // Add your logout functionality here if needed
+              _logout();
             },
             icon: const Icon(Icons.logout),
           ),
