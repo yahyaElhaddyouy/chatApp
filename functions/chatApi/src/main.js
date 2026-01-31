@@ -1,13 +1,16 @@
 const sdk = require("node-appwrite");
 
-const DATABASE_ID = "697baca3000c020a5b31";  // Your DB ID
+const DATABASE_ID = "697baca3000c020a5b31";  // Your Database ID
 const CONVERSATIONS_COL = "conversations";    // Conversations collection
 const MEMBERSHIPS_COL = "memberships";        // Memberships collection
 const MESSAGES_COL = "messages";              // Messages collection
 
-// Helper to return JSON
+// Helper to return JSON response
 function json(res, status, body) {
-  return res.json(body, status);
+  if (res) {
+    return res.json(body, status);  // Ensure res is defined
+  }
+  return { error: "Response object not found." };  // Return error if res is undefined
 }
 
 // Helper to handle request body JSON parsing
@@ -53,9 +56,9 @@ async function assertMember(db, userId, conversationId) {
 module.exports = async function (req, res) {
   try {
     const client = new sdk.Client()
-      .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)
-      .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)
-      .setKey(process.env.APPWRITE_API_KEY);
+      .setEndpoint(process.env.APPWRITE_FUNCTION_API_ENDPOINT)  // Endpoint for Appwrite Function
+      .setProject(process.env.APPWRITE_FUNCTION_PROJECT_ID)    // Project ID
+      .setKey(process.env.APPWRITE_API_KEY);                    // API Key for Appwrite
 
     const db = new sdk.Databases(client);
     const users = new sdk.Users(client);
