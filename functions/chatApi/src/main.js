@@ -15,6 +15,7 @@ function json(res, status, body) {
 
 // Helper to handle request body JSON parsing
 async function getBodyJson(req) {
+  // Make sure the incoming request body is parsed into JSON
   if (req.bodyJson && typeof req.bodyJson === "object") return req.bodyJson;
 
   const raw = req.body;
@@ -22,7 +23,7 @@ async function getBodyJson(req) {
   if (typeof raw === "object") return raw;
 
   try {
-    return JSON.parse(raw);
+    return JSON.parse(raw); // Parse string to JSON
   } catch {
     return {};
   }
@@ -63,14 +64,13 @@ module.exports = async function (req, res) {
     const db = new sdk.Databases(client);
     const users = new sdk.Users(client);
 
+    // Ensure the body is correctly parsed
     const body = await getBodyJson(req);
+    console.log("Received request body:", body); // Log the request body to ensure it's received correctly
+
     const action = body.action;
-    const userId = body.userId; // The user is expected to be authenticated
+    const userId = body.userId; // Expecting this from the frontend
 
-    // Log request body
-    console.log("Received request body:", body);
-
-    // Check if the action is valid
     if (!action) return json(res, 400, { ok: false, code: "MISSING_ACTION" });
 
     // Handle Create DM action
@@ -115,9 +115,6 @@ module.exports = async function (req, res) {
         lastMessageSenderId: null,
       }, perms);
 
-      // Log created conversation
-      console.log("Created conversation:", conversation);
-
       if (!conversation) {
         return json(res, 404, { ok: false, error: "Conversation not found" });
       }
@@ -155,13 +152,14 @@ module.exports = async function (req, res) {
       return json(res, 200, { ok: true, conversation, reused: false });
     }
 
-    // Handle other actions (e.g., sendMessage, markRead) similarly
+    // Return 404 if the action is not recognized
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
     console.error("Error in function:", e);
     return res.json({ ok: false, error: e.message }, 500);
   }
 };
+
 
 console.log("Received request body:", body);  // This will log the incoming body
 
