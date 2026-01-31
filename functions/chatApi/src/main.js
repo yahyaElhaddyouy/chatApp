@@ -205,9 +205,7 @@ module.exports = async function (req, res) {
     // Return 404 if the action is not recognized
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
+    console.error(e);  // Log the error
     return res.json({ ok: false, error: e.message }, 500);  // Handle errors
   }
 };
-
-console.log(memberships); // Print the memberships list
-console.log(conversations);
