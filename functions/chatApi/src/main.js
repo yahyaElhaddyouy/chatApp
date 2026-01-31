@@ -142,8 +142,17 @@ module.exports = async function (req, res) {
         archived: false,
       }, perms);
 
+      console.log("Conversation data:", conversation);
+      if (!conversation) {
+        return json(res, 404, { ok: false, error: "Conversation not found" });
+      }  // Log the conversation
       return json(res, 200, { ok: true, conversation, reused: false });
     }
+
+    // Ensure conversation is valid before returning
+    console.log("Conversation data:", conversation);  // Log the conversation data
+
+
 
     // Handle Send Message action
     if (action === "sendMessage") {
@@ -185,6 +194,8 @@ module.exports = async function (req, res) {
 
       return json(res, 200, { ok: true, message });
     }
+
+
 
     // Handle Mark Read action
     if (action === "markRead") {
