@@ -29,7 +29,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (res['ok'] == true) {
       final conversationsList = res['conversations'] as List;
       setState(() {
-        conversations = conversationsList.map((e) => e as Map<String, dynamic>).toList();
+        conversations =
+            conversationsList.map((e) => e as Map<String, dynamic>).toList();
       });
     } else {
       // Handle error (showing snackbar)
@@ -50,14 +51,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
       builder: (ctx) {
         return Padding(
           padding: EdgeInsets.only(
-            left: 16, right: 16,
+            left: 16,
+            right: 16,
             top: 12,
             bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("New DM", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+              const Text("New DM",
+                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
               const SizedBox(height: 12),
               TextField(
                 controller: emailC,
@@ -68,19 +71,20 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (emailC.text.isNotEmpty) {
-                    final userId = 'USER_ID'; // Replace with the actual userId from the logged-in user
-                    final response = await chatService.createDm(otherEmail: emailC.text, userId: userId);
+                    final userId =
+                        'USER_ID'; // Replace with the actual logged-in user ID
+                    final response = await chatService.createDm(
+                        otherEmail: emailC.text, userId: userId);
 
                     if (response['ok'] == true) {
                       Navigator.pop(ctx, emailC.text); // Close the sheet
-                      // Handle success (e.g., show success Snackbar)
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text('DM created successfully'),
                       ));
                     } else {
-                      // Handle failure (show failure snackbar)
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text(response['error'] ?? 'Failed to create DM'),
+                        content:
+                            Text(response['error'] ?? 'Failed to create DM'),
                       ));
                     }
                   }
@@ -121,7 +125,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                   itemBuilder: (context, index) {
                     final conversation = conversations[index];
                     final title = conversation['title'] ?? 'DM';
-                    final lastMessage = conversation['lastMessageText'] ?? 'No messages';
+                    final lastMessage =
+                        conversation['lastMessageText'] ?? 'No messages';
                     final conversationId = conversation['\$id'];
 
                     return ListTile(
@@ -131,7 +136,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => ChatScreen(conversationId: conversationId),
+                            builder: (_) =>
+                                ChatScreen(conversationId: conversationId),
                           ),
                         );
                       },

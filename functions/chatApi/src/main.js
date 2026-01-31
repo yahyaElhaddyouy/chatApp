@@ -162,3 +162,7 @@ module.exports = async function (req, res) {
     return res.json({ ok: false, error: e.message }, 500);
   }
 };
+
+console.log("Received request body:", body);  // This will log the incoming body
+
+// Continue your logic...
