@@ -55,7 +55,13 @@ async function assertMember(db, userId, conversationId) {
 // Main function to handle actions
 module.exports = async (context) => {
   try {
-    const { req, res, log = console, error } = context;  // Use console as fallback if log is undefined
+    const { req, res, log, error } = context;
+
+    // Ensure log is defined
+    if (!log) {
+      console.error("Log object is not defined in context");
+      return json(res, 500, { ok: false, error: "LOG_NOT_DEFINED" });
+    }
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
@@ -157,7 +163,9 @@ module.exports = async (context) => {
     return json(res, 404, { ok: false, error: "UNKNOWN_ACTION", action });
 
   } catch (e) {
-    log.error("Error processing the request:", e);  // Log error for debugging
+    if (log) {
+      log.error("Error processing the request:", e);  // Log error for debugging
+    }
     return json(res, 500, { ok: false, error: e.message });
   }
 };
