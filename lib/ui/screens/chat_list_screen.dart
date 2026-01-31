@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import '../../services/chat_service.dart';
 import 'chat_screen.dart';
 
@@ -69,12 +68,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (emailC.text.isNotEmpty) {
-                    final response = await chatService.createDm(otherEmail: emailC.text);
+                    final userId = 'USER_ID'; // Replace with the actual userId from the logged-in user
+                    final response = await chatService.createDm(otherEmail: emailC.text, userId: userId);
+
                     if (response['ok'] == true) {
                       Navigator.pop(ctx, emailC.text); // Close the sheet
-                      // Handle success
+                      // Handle success (e.g., show success Snackbar)
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text('DM created successfully'),
+                      ));
                     } else {
-                      // Show failure snackbar
+                      // Handle failure (show failure snackbar)
                       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                         content: Text(response['error'] ?? 'Failed to create DM'),
                       ));

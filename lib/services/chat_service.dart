@@ -3,26 +3,33 @@ import '../config/environment.dart';
 import 'appwrite_client.dart';
 
 class ChatService {
+  // Helper function to send a request to Appwrite Function
   Future<Map<String, dynamic>> _call(Map<String, dynamic> payload) async {
-    final exec = await AppwriteClient.functions.createExecution(
-      functionId: Environment.chatFunctionId,
-      body: jsonEncode(payload), // ✅ must be String in your SDK version
-    );
+    try {
+      final exec = await AppwriteClient.functions.createExecution(
+        functionId: Environment.chatFunctionId,
+        body: jsonEncode(payload),  // Must be String in your SDK version
+      );
 
-    final raw = (exec.responseBody ?? '').toString().trim();
-    if (raw.isEmpty) return <String, dynamic>{};
+      // Handle empty or invalid response
+      final raw = (exec.responseBody ?? '').toString().trim();
+      if (raw.isEmpty) return <String, dynamic>{};
 
-    final decoded = jsonDecode(raw);
-    if (decoded is Map<String, dynamic>) return decoded;
+      final decoded = jsonDecode(raw);
+      if (decoded is Map<String, dynamic>) return decoded;
 
-    // If function returns non-object JSON
-    return <String, dynamic>{"data": decoded};
+      // If the function returns non-object JSON
+      return <String, dynamic>{"data": decoded};
+    } catch (e) {
+      print('Error calling Appwrite function: $e');
+      return {'ok': false, 'error': 'Failed to call Appwrite function'};
+    }
   }
 
   // Fetch all conversations for the current user
   Future<Map<String, dynamic>> listConversations() async {
     return _call({
-      "action": "listConversations",
+      "action": "listConversations",  // Action is 'listConversations'
       "databaseId": Environment.databaseId,
       "membershipsCollectionId": Environment.membershipsCollectionId,
     });
@@ -33,7 +40,7 @@ class ChatService {
     required String conversationId,
   }) async {
     return _call({
-      "action": "listMessages",
+      "action": "listMessages",  // Action is 'listMessages'
       "databaseId": Environment.databaseId,
       "messagesCollectionId": Environment.messagesCollectionId,
       "conversationId": conversationId,
@@ -46,20 +53,20 @@ class ChatService {
     required String text,
   }) async {
     return _call({
-      "action": "sendMessage",
+      "action": "sendMessage",  // Action is 'sendMessage'
       "databaseId": Environment.databaseId,
       "conversationsCollectionId": Environment.conversationsCollectionId,
       "membershipsCollectionId": Environment.membershipsCollectionId,
       "messagesCollectionId": Environment.messagesCollectionId,
       "conversationId": conversationId,
-      "text": text,
+      "text": text,  // Text message to send
     });
   }
 
   // Mark messages as read in a conversation
   Future<Map<String, dynamic>> markRead({required String conversationId}) async {
     return _call({
-      "action": "markRead",
+      "action": "markRead",  // Action is 'markRead'
       "databaseId": Environment.databaseId,
       "conversationsCollectionId": Environment.conversationsCollectionId,
       "membershipsCollectionId": Environment.membershipsCollectionId,
@@ -69,14 +76,15 @@ class ChatService {
   }
 
   // Create a new Direct Message (DM)
-  Future<Map<String, dynamic>> createDm({required String otherEmail}) async {
+  Future<Map<String, dynamic>> createDm({required String otherEmail, required String userId}) async {
     return _call({
-      "action": "createDm",
+      "action": "createDm",  // Action is 'createDm'
       "databaseId": Environment.databaseId,
       "conversationsCollectionId": Environment.conversationsCollectionId,
       "membershipsCollectionId": Environment.membershipsCollectionId,
       "messagesCollectionId": Environment.messagesCollectionId,
-      "otherEmail": otherEmail,
+      "otherEmail": otherEmail,  // Email of the person you're creating the DM with
+      "userId": userId,          // The ID of the current user
     });
   }
 }
