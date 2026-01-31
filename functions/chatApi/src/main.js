@@ -55,11 +55,14 @@ async function assertMember(db, userId, conversationId) {
 // Main function to handle actions
 module.exports = async (context) => {
   try {
-    const { req, res, log, error, db } = context;
+    const { req, res, log, error } = context;
 
-    // Initialize the client for Users API
+    // Initialize the client for Users API and Database
     const client = new sdk.Client();
     client.setEndpoint('https://nyc.cloud.appwrite.io/v1').setProject('697b95cd000a52d5cf5b').setKey(process.env.APPWRITE_API_KEY);
+
+    // Initialize the database service
+    const db = new sdk.Databases(client);
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
