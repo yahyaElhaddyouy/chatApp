@@ -79,7 +79,34 @@ module.exports = async (context) => {
     // Log the action for debugging purposes
     context.log("Action received:", action);
 
+    // Get the current user ID from headers
+    const currentUserId = req.headers['x-appwrite-user-id'];
+    if (!currentUserId) {
+      return json(401, { ok: false, error: "UNAUTHORIZED" });
+    }
+
     // Proceed with action processing
+    if (action === "listConversations") {
+      // Query memberships for the current user
+      const memberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+        sdk.Query.equal("userId", currentUserId),
+      ]);
+
+      // Extract conversation IDs
+      const conversationIds = memberships.documents.map(m => m.conversationId);
+
+      if (conversationIds.length === 0) {
+        return json(200, { ok: true, conversations: [] });
+      }
+
+      // Fetch conversations
+      const conversations = await db.listDocuments(DATABASE_ID, CONVERSATIONS_COL, [
+        sdk.Query.equal("\$id", conversationIds),
+      ]);
+
+      return json(200, { ok: true, conversations: conversations.documents });
+    }
+
     if (action === "createDm") {
       const nowIso = new Date().toISOString();
 

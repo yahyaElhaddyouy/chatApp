@@ -3,6 +3,8 @@ import 'package:chat_app_cloud/services/appwrite_client.dart';
 import 'package:flutter/material.dart';
 import '../../services/chat_service.dart';
 import 'chat_screen.dart';
+import 'package:provider/provider.dart';
+import '../../state/theme_provider.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -74,7 +76,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 onPressed: () async {
                   if (emailC.text.isNotEmpty) {
                     final user = await AppwriteClient.account.get();
-                    final userId = user.$id; // Extract the userId from the response
+                    final userId =
+                        user.$id; // Extract the userId from the response
                     final response = await chatService.createDm(
                       otherEmail: emailC.text,
                       userId: userId, // Pass the actual userId
@@ -108,6 +111,15 @@ class _ChatListScreenState extends State<ChatListScreen> {
       appBar: AppBar(
         title: const Text("Chats"),
         actions: [
+          IconButton(
+            tooltip: "Toggle theme",
+            onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
+            icon: Icon(
+              context.watch<ThemeProvider>().mode == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+          ),
           IconButton(
             onPressed: () {
               // Add your logout functionality here if needed

@@ -1,3 +1,4 @@
+import 'package:chat_app_cloud/state/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/chat_service.dart';
@@ -22,7 +23,8 @@ class _ChatScreenState extends State<ChatScreen> {
       loadingMessages = true;
     });
 
-    final res = await chatService.listMessages(conversationId: widget.conversationId);
+    final res =
+        await chatService.listMessages(conversationId: widget.conversationId);
 
     setState(() {
       loadingMessages = false;
@@ -50,7 +52,20 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Chat")),
+      appBar: AppBar(
+        title: const Text("Chat"),
+        actions: [
+          IconButton(
+            tooltip: "Toggle theme",
+            onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
+            icon: Icon(
+              context.watch<ThemeProvider>().mode == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
+            ),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -65,21 +80,27 @@ class _ChatScreenState extends State<ChatScreen> {
                           final message = messages[index];
                           final senderId = message['senderId'];
                           final text = message['text'];
-                          final isMe = senderId == 'currentUserId'; // Replace with the actual user ID
+                          final isMe = senderId ==
+                              'currentUserId'; // Replace with the actual user ID
 
                           return Align(
-                            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                            alignment: isMe
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
                             child: Container(
                               margin: const EdgeInsets.symmetric(vertical: 6),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 10),
                               constraints: const BoxConstraints(maxWidth: 300),
                               decoration: BoxDecoration(
-                                color: isMe ? Colors.blue : Colors.grey.shade300,
+                                color:
+                                    isMe ? Colors.blue : Colors.grey.shade300,
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 text,
-                                style: TextStyle(color: isMe ? Colors.white : Colors.black),
+                                style: TextStyle(
+                                    color: isMe ? Colors.white : Colors.black),
                               ),
                             ),
                           );
@@ -93,7 +114,8 @@ class _ChatScreenState extends State<ChatScreen> {
                 Expanded(
                   child: TextField(
                     controller: msgController,
-                    decoration: const InputDecoration(hintText: "Type a message..."),
+                    decoration:
+                        const InputDecoration(hintText: "Type a message..."),
                   ),
                 ),
                 const SizedBox(width: 8),
