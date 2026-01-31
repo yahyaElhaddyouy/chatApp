@@ -7,10 +7,11 @@ const MESSAGES_COL = "messages";              // Messages collection
 
 // Initialize the client for Users API and Database
 const client = new sdk.Client();
-client.setEndpoint('https://nyc.cloud.appwrite.io/v1').setProject('697b95cd000a52d5cf5b').setKey(process.env.APPWRITE_API_KEY);
+client.setEndpoint('https://[YOUR_APPWRITE_ENDPOINT]').setProject('[YOUR_PROJECT_ID]').setKey(process.env.APPWRITE_API_KEY);
 
-// Initialize the database service
+// Initialize the database and users services
 const db = new sdk.Databases(client);
+const users = new sdk.Users(client);
 
 // Helper to return JSON response
 function json(status, body) {
@@ -42,23 +43,6 @@ function genIntId() {
   return ts * 1000 + rnd; // Unique integer
 }
 
-// Function to check if a user is a member of a conversation
-async function assertMember(db, userId, conversationId) {
-  const list = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-    sdk.Query.equal("conversationId", conversationId),
-    sdk.Query.equal("userId", userId),
-    sdk.Query.limit(1),
-  ]);
-
-  if (!list.documents || list.documents.length === 0) {
-    const err = new Error("NOT_A_MEMBER");
-    err.code = 403;
-    throw err;
-  }
-
-  return list.documents[0];
-}
-
 // Main function to handle actions
 module.exports = async (context) => {
   try {
@@ -86,76 +70,33 @@ module.exports = async (context) => {
     // Log the action for debugging purposes
     context.log("Action received:", action);
 
-    // Get the current user ID from headers
-    const currentUserId = req.headers['x-appwrite-user-id'];
-    if (!currentUserId) {
-      return json(401, { ok: false, error: "UNAUTHORIZED" });
-    }
-
-    // Proceed with action processing
-    if (action === "listConversations") {
-      // Query memberships for the current user
-      const memberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-        sdk.Query.equal("userId", currentUserId),
-      ]);
-
-      // Extract conversation IDs
-      const conversationIds = memberships.documents.map(m => m.conversationId);
-
-      if (conversationIds.length === 0) {
-        return json(200, { ok: true, conversations: [] });
-      }
-
-      // Fetch conversations
-      const conversations = await db.listDocuments(DATABASE_ID, CONVERSATIONS_COL, [
-        sdk.Query.equal("\$id", conversationIds),
-      ]);
-
-      // Adding 'title' (other user name) to each conversation
-      const updatedConversations = await Promise.all(conversations.documents.map(async (conversation) => {
-        // Find the other user in the membership
-        const otherUserMembership = memberships.documents.find(m => m.conversationId === conversation.$id && m.userId !== currentUserId);
-        if (otherUserMembership) {
-          // Fetch the other user info
-          const otherUser = await users.get(otherUserMembership.userId);
-          return {
-            $id: conversation.$id,
-            title: otherUser.name || otherUser.email,  // Add the other user's name as the title
-            lastMessageText: conversation.lastMessageText || 'No messages',
-            lastMessageAt: conversation.lastMessageAt || null,
-          };
-        }
-        return null;
-      }));
-
-      // Filter out null values (in case no other user found)
-      return json(200, { ok: true, conversations: updatedConversations.filter(c => c !== null) });
-    }
-
+    // Check if action is 'createDm'
     if (action === "createDm") {
       const nowIso = new Date().toISOString();
 
       // Ensure userId and otherEmail are provided
       if (!otherEmail || !userId) {
+        context.log("Missing fields: otherEmail or userId");
         return json(400, { ok: false, error: "MISSING_FIELDS" });
       }
 
-      // Find the user by email (using Appwrite's Users API)
-      const users = new sdk.Users(client);
+      // 1. Find the user by email (using Appwrite's Users API)
       const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
 
       if (!userList.users || userList.users.length === 0) {
+        context.log("User not found with email:", otherEmail);
         return json(404, { ok: false, error: "USER_NOT_FOUND" });
       }
 
       const otherUser = userList.users[0];
 
-      // Prevent creating a DM with yourself
+      // 2. Prevent creating a DM with yourself
       if (userId === otherUser.$id) {
+        context.log("Cannot create DM with self:", userId);
         return json(400, { ok: false, error: "CANNOT_DM_SELF" });
       }
 
-      // Define conversation permissions
+      // 3. Define conversation permissions
       const perms = [
         `read("user:${userId}")`,
         `read("user:${otherUser.$id}")`,
@@ -165,7 +106,7 @@ module.exports = async (context) => {
         `delete("user:${otherUser.$id}")`,
       ];
 
-      // Create the conversation
+      // 4. Create the conversation
       const conversation = await db.createDocument(DATABASE_ID, CONVERSATIONS_COL, sdk.ID.unique(), {
         type: "dm",
         createdBy: userId,
@@ -175,7 +116,10 @@ module.exports = async (context) => {
         lastMessageSenderId: null,
       }, perms);
 
-      // Create membership for the first user
+      // Log the conversation data for debugging
+      context.log("Conversation created:", conversation);
+
+      // 5. Create membership for the first user (creator)
       const teamIdInt = 1; // Integer required
       const roleValue = "member";
       const statusValue = "active";
@@ -192,7 +136,7 @@ module.exports = async (context) => {
         archived: false,
       }, perms);
 
-      // Create membership for the second user
+      // 6. Create membership for the second user (recipient)
       await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
         membershipId: genIntId(),
         teamId: teamIdInt,
@@ -205,11 +149,7 @@ module.exports = async (context) => {
         archived: false,
       }, perms);
 
-      console.log("Conversation data:", conversation);
-      if (!conversation) {
-        return json(404, { ok: false, error: "Conversation not found" });
-      }
-
+      // 7. Return success response
       return json(200, { ok: true, conversation, reused: false });
     }
 

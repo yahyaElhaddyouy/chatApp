@@ -49,6 +49,7 @@ class AuthService {
     required String email,
     required String password,
   }) {
+    AppwriteClient.account.deleteSessions();
     return _account.createEmailPasswordSession(
       email: email.trim(),
       password: password,
