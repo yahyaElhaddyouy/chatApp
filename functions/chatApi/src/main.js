@@ -28,13 +28,6 @@ async function getBodyJson(req) {
   }
 }
 
-// Function to generate a unique membershipId (Integer)
-function genIntId() {
-  const ts = Date.now(); // 13-digit timestamp
-  const rnd = Math.floor(Math.random() * 1000); // Random 3 digits
-  return ts * 1000 + rnd; // Unique integer
-}
-
 // Function to check if a user is a member of a conversation
 async function assertMember(db, userId, conversationId) {
   const list = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
@@ -196,26 +189,9 @@ module.exports = async function (req, res) {
       return json(res, 200, { ok: true, message });
     }
 
-    // Handle Mark Read action
-    if (action === "markRead") {
-      const conversationId = body.conversationId;
-      if (!conversationId) return json(res, 400, { ok: false, code: "MISSING_CONVERSATION_ID" });
-
-      const nowIso = new Date().toISOString();
-      const member = await assertMember(db, userId, conversationId);
-
-      await db.updateDocument(DATABASE_ID, MEMBERSHIPS_COL, member.$id, {
-        lastReadAt: nowIso,
-        lastModifiedAt: nowIso,
-      });
-
-      return json(res, 200, { ok: true });
-    }
-
-    // Return 404 if the action is not recognized
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
-    console.error("Error in function:", e);  // Log the error
-    return res.json({ ok: false, error: e.message }, 500);  // Handle errors
+    console.error("Error in function:", e);
+    return res.json({ ok: false, error: e.message }, 500);
   }
 };
