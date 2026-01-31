@@ -43,7 +43,7 @@ module.exports = async (context) => {
 
     // Initialize the client for Users API and Database
     const client = new sdk.Client();
-    client.setEndpoint('https://cloud.appwrite.io/v1');
+    client.setEndpoint('https://nyc.cloud.appwrite.io/v1');
     client.setProject('697b95cd000a52d5cf5b');
     client.setKey(process.env.APPWRITE_API_KEY);
 
