@@ -59,7 +59,7 @@ module.exports = async (context) => {
 
     // Initialize the client for Users API
     const client = new sdk.Client();
-    client.setEndpoint('https://cloud.appwrite.io/v1').setProject('697baca3000c020a5b31').setKey(process.env.APPWRITE_API_KEY);
+    client.setEndpoint('https://nyc.cloud.appwrite.io/v1').setProject('697b95cd000a52d5cf5b').setKey(process.env.APPWRITE_API_KEY);
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
