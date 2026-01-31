@@ -22,24 +22,13 @@ async function getBodyJson(req) {
   }
 }
 
-async function assertMember(db, databaseId, membershipsCol, conversationId, userId) {
-  const list = await db.listDocuments(
-    databaseId,
-    membershipsCol,
-    [
-      sdk.Query.equal("conversationId", conversationId),
-      sdk.Query.equal("userId", userId),
-      sdk.Query.limit(1),
-    ]
-  );
-
-  if (!list.documents || list.documents.length === 0) {
-    const err = new Error("NOT_A_MEMBER");
-    err.code = 403;
-    throw err;
-  }
-
-  return list.documents[0];
+async function findMembership(db, databaseId, membershipsCol, conversationId, userId) {
+  const list = await db.listDocuments(databaseId, membershipsCol, [
+    sdk.Query.equal("conversationId", conversationId),
+    sdk.Query.equal("userId", userId),
+    sdk.Query.limit(1),
+  ]);
+  return list.documents?.[0] || null;
 }
 
 module.exports = async ({ req, res, log, error }) => {
@@ -65,40 +54,33 @@ module.exports = async ({ req, res, log, error }) => {
       return json(res, 400, { ok: false, code: "MISSING_COLLECTION_IDS" });
     }
 
-    // Appwrite met souvent l'user id courant dans ce header lors d'un createExecution (SDK)
+    // Provided by Appwrite when calling createExecution while logged-in
     const authUserId = asString(
       req.headers?.["x-appwrite-user-id"] || req.headers?.["X-Appwrite-User-Id"]
     ).trim();
 
+    if (!authUserId) return json(res, 401, { ok: false, code: "NO_AUTH_USER" });
+
     // =========================
-    // ACTION: createDm
+    // createDm
     // =========================
     if (action === "createDm") {
-      if (!authUserId) return json(res, 401, { ok: false, code: "NO_AUTH_USER" });
-
       const otherEmail = asString(body.otherEmail).trim().toLowerCase();
       if (!otherEmail) return json(res, 400, { ok: false, code: "MISSING_OTHER_EMAIL" });
 
-      // 1) trouver l'autre user par email
-      const userList = await users.list([
-        sdk.Query.equal("email", otherEmail),
-        sdk.Query.limit(1),
-      ]);
-
+      const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
       if (!userList.users || userList.users.length === 0) {
         return json(res, 404, { ok: false, code: "USER_NOT_FOUND" });
       }
 
       const otherUser = userList.users[0];
-
       if (authUserId === otherUser.$id) {
         return json(res, 400, { ok: false, code: "CANNOT_DM_SELF" });
       }
 
       const nowIso = new Date().toISOString();
 
-      // Permissions conversation (DM entre 2 users)
-      const convoPerms = [
+      const perms = [
         `read("user:${authUserId}")`,
         `read("user:${otherUser.$id}")`,
         `update("user:${authUserId}")`,
@@ -107,7 +89,6 @@ module.exports = async ({ req, res, log, error }) => {
         `delete("user:${otherUser.$id}")`,
       ];
 
-      // 2) créer la conversation
       const conversation = await db.createDocument(
         databaseId,
         conversationsCol,
@@ -116,31 +97,29 @@ module.exports = async ({ req, res, log, error }) => {
           type: "dm",
           title: "",
           photoUrl: "",
+          teamId: null, // keep if your schema allows null
           createdBy: authUserId,
           createdAt: nowIso,
           lastMessageText: "",
           lastMessageAt: null,
           lastMessageSenderId: null,
         },
-        convoPerms
+        perms
       );
 
-      // 3) créer memberships (avec membershipId REQUIRED)
-      const memberPerms = convoPerms;
-
+      // memberships (keep them minimal — after you removed hard required fields / set defaults)
       await db.createDocument(
         databaseId,
         membershipsCol,
         sdk.ID.unique(),
         {
-          membershipId: sdk.ID.unique(), // ✅ REQUIRED by your schema
           conversationId: conversation.$id,
           userId: authUserId,
-          role: "member",
           joinedAt: nowIso,
           lastReadAt: nowIso,
+          // role, membershipStatus, teamId, membershipId should have defaults or be optional
         },
-        memberPerms
+        perms
       );
 
       await db.createDocument(
@@ -148,117 +127,76 @@ module.exports = async ({ req, res, log, error }) => {
         membershipsCol,
         sdk.ID.unique(),
         {
-          membershipId: sdk.ID.unique(), // ✅ REQUIRED by your schema
           conversationId: conversation.$id,
           userId: otherUser.$id,
-          role: "member",
           joinedAt: nowIso,
           lastReadAt: null,
         },
-        memberPerms
+        perms
       );
 
       return json(res, 200, { ok: true, conversation, reused: false });
     }
 
     // =========================
-    // ACTION: sendMessage
+    // sendMessage
     // =========================
     if (action === "sendMessage") {
-      if (!authUserId) return json(res, 401, { ok: false, code: "NO_AUTH_USER" });
-
       const conversationId = asString(body.conversationId).trim();
       const text = asString(body.text).trim();
-
       if (!conversationId || !text) return json(res, 400, { ok: false, code: "MISSING_FIELDS" });
       if (text.length > 2000) return json(res, 400, { ok: false, code: "TEXT_TOO_LONG" });
 
-      // Vérifier membership
-      await assertMember(db, databaseId, membershipsCol, conversationId, authUserId);
+      const member = await findMembership(db, databaseId, membershipsCol, conversationId, authUserId);
+      if (!member) return json(res, 403, { ok: false, code: "NOT_A_MEMBER" });
 
-      // Récupérer conversation (permissions)
       const convo = await db.getDocument(databaseId, conversationsCol, conversationId);
-
       const nowIso = new Date().toISOString();
 
-      // Créer message
       const message = await db.createDocument(
         databaseId,
         messagesCol,
         sdk.ID.unique(),
         {
-          conversationId,
-          senderId: authUserId,
+          conversationId,        // ✅ string
+          senderId: authUserId,  // ✅ string
           text,
-          createdAt: nowIso,
+          createdAt: nowIso,     // datetime in schema
         },
         convo.$permissions
       );
 
-      // Update conversation last message
       await db.updateDocument(databaseId, conversationsCol, conversationId, {
         lastMessageText: text,
         lastMessageAt: nowIso,
         lastMessageSenderId: authUserId,
       });
 
-      // Update membership lastReadAt (sender) si existe
-      const m = await db.listDocuments(
-        databaseId,
-        membershipsCol,
-        [
-          sdk.Query.equal("conversationId", conversationId),
-          sdk.Query.equal("userId", authUserId),
-          sdk.Query.limit(1),
-        ]
-      );
-
-      if (m.documents && m.documents.length > 0) {
-        await db.updateDocument(databaseId, membershipsCol, m.documents[0].$id, {
-          lastReadAt: nowIso,
-        });
-      }
-
       return json(res, 200, { ok: true, message });
     }
 
     // =========================
-    // ACTION: markRead
+    // markRead
     // =========================
     if (action === "markRead") {
-      if (!authUserId) return json(res, 401, { ok: false, code: "NO_AUTH_USER" });
-
       const conversationId = asString(body.conversationId).trim();
       if (!conversationId) return json(res, 400, { ok: false, code: "MISSING_CONVERSATION_ID" });
 
+      const member = await findMembership(db, databaseId, membershipsCol, conversationId, authUserId);
+      if (!member) return json(res, 403, { ok: false, code: "NOT_A_MEMBER" });
+
       const nowIso = new Date().toISOString();
-
-      const list = await db.listDocuments(
-        databaseId,
-        membershipsCol,
-        [
-          sdk.Query.equal("conversationId", conversationId),
-          sdk.Query.equal("userId", authUserId),
-          sdk.Query.limit(1),
-        ]
-      );
-
-      if (!list.documents || list.documents.length === 0) {
-        return json(res, 403, { ok: false, code: "NOT_A_MEMBER" });
-      }
-
-      await db.updateDocument(databaseId, membershipsCol, list.documents[0].$id, {
+      await db.updateDocument(databaseId, membershipsCol, member.$id, {
         lastReadAt: nowIso,
+        lastModifiedAt: nowIso,
       });
 
       return json(res, 200, { ok: true });
     }
 
-    // Unknown action
     return json(res, 404, { ok: false, code: "UNKNOWN_ACTION", action });
   } catch (e) {
-    error(String(e));
-    const status = e && typeof e === "object" && e.code ? e.code : 500;
-    return json(res, status, { ok: false, error: String(e) });
+    const msg = String(e);
+    return json(res, 500, { ok: false, error: msg });
   }
 };
