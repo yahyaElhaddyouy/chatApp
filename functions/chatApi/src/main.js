@@ -55,28 +55,22 @@ async function assertMember(db, userId, conversationId) {
 // Main function to handle actions
 module.exports = async (context) => {
   try {
-    const { req, res, log, error } = context;
-
-    // Ensure log is defined
-    if (!log) {
-      console.error("Log object is not defined in context");
-      return json(res, 500, { ok: false, error: "LOG_NOT_DEFINED" });
-    }
+    const { req, res, log, error, client, db } = context;
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
-    log.log("Received request body:", body);  // Log the body for debugging
+    console.log("Received request body:", body);  // Log the body for debugging
 
     const { action, otherEmail, userId } = body;
 
     // Ensure action is present
     if (!action) {
-      log.log("Missing action in request body.");  // Log if action is missing
+      console.log("Missing action in request body.");  // Log if action is missing
       return json(res, 400, { ok: false, error: "MISSING_ACTION" });
     }
 
     // Log the action for debugging purposes
-    log.log("Action received:", action);
+    console.log("Action received:", action);
 
     // Proceed with action processing
     if (action === "createDm") {
@@ -152,7 +146,7 @@ module.exports = async (context) => {
         archived: false,
       }, perms);
 
-      log.log("Conversation data:", conversation);
+      console.log("Conversation data:", conversation);
       if (!conversation) {
         return json(res, 404, { ok: false, error: "Conversation not found" });
       }
@@ -163,9 +157,7 @@ module.exports = async (context) => {
     return json(res, 404, { ok: false, error: "UNKNOWN_ACTION", action });
 
   } catch (e) {
-    if (log) {
-      log.error("Error processing the request:", e);  // Log error for debugging
-    }
+    console.error("Error processing the request:", e);  // Log error for debugging
     return json(res, 500, { ok: false, error: e.message });
   }
 };

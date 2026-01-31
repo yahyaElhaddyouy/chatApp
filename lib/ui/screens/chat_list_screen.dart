@@ -1,3 +1,5 @@
+import 'package:appwrite/appwrite.dart';
+import 'package:chat_app_cloud/services/appwrite_client.dart';
 import 'package:flutter/material.dart';
 import '../../services/chat_service.dart';
 import 'chat_screen.dart';
@@ -71,8 +73,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
               ElevatedButton(
                 onPressed: () async {
                   if (emailC.text.isNotEmpty) {
-                    final userId =
-                        'USER_ID'; // Replace with actual logged-in user ID
+                    final user = await AppwriteClient.account.get();
+                    final userId = user.$id; // Extract the userId from the response
                     final response = await chatService.createDm(
                       otherEmail: emailC.text,
                       userId: userId, // Pass the actual userId
