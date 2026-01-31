@@ -1,388 +1,394 @@
-const {
-  Client,
-  Account,
-  Databases,
-  Users,
-  ID,
-  Permission,
-  Role,
-  Query,
-} = require("node-appwrite");
-
-/**
- * ====== EDIT THESE IF YOUR ENUM VALUES DIFFER ======
- */
-const ROLE_ADMIN = "admin";
-const ROLE_MEMBER = "member";
-const STATUS_ACTIVE = "active";
-
-/**
- * Simple JSON responder
- */
-function json(res, body, status = 200) {
-  return res.json(body, status);
-}
-
-const nowIso = () => new Date().toISOString();
-
-/**
- * Required string helper
- */
-const reqStr = (v, name) => {
-  const s = (v ?? "").toString().trim();
-  if (!s) throw new Error(`${name} required`);
-  return s;
+module.exports = async ({ req, res }) => {
+  return res.json({ ok: true, ping: true, time: new Date().toISOString() });
 };
 
-/**
- * Generate unique integer membershipId (because your schema requires integer)
- */
-let membershipSeq = 0;
-const nextMembershipId = () => {
-  membershipSeq = (membershipSeq + 1) % 1000;
-  return Date.now() * 1000 + membershipSeq; // integer unique
-};
 
-/**
- * Find Auth userId by email using Users API
- */
-async function userIdByEmail(users, email) {
-  const r = await users.list([Query.equal("email", email)]);
-  return r.users && r.users[0] ? r.users[0].$id : null;
-}
 
-module.exports = async ({ req, res, log, error }) => {
-  try {
-    const endpoint = process.env.APPWRITE_ENDPOINT;
-    const projectId = process.env.APPWRITE_PROJECT_ID;
-    const apiKey = process.env.APPWRITE_API_KEY;
+// const {
+//   Client,
+//   Account,
+//   Databases,
+//   Users,
+//   ID,
+//   Permission,
+//   Role,
+//   Query,
+// } = require("node-appwrite");
 
-    if (!endpoint || !projectId || !apiKey) {
-      return json(res, { ok: false, error: "Missing env vars" }, 500);
-    }
+// /**
+//  * ====== EDIT THESE IF YOUR ENUM VALUES DIFFER ======
+//  */
+// const ROLE_ADMIN = "admin";
+// const ROLE_MEMBER = "member";
+// const STATUS_ACTIVE = "active";
 
-    // Provided when a logged-in user executes the function
-    const userJwt = req.headers["x-appwrite-user-jwt"] || "";
-    if (!userJwt) {
-      return json(res, { ok: false, error: "Not authenticated" }, 401);
-    }
+// /**
+//  * Simple JSON responder
+//  */
+// function json(res, body, status = 200) {
+//   return res.json(body, status);
+// }
 
-    // Parse JSON body (Flutter sends String body)
-    let body = {};
-    if (req.body) {
-      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-    }
+// const nowIso = () => new Date().toISOString();
 
-    const action = (body.action || "").toString().trim();
+// /**
+//  * Required string helper
+//  */
+// const reqStr = (v, name) => {
+//   const s = (v ?? "").toString().trim();
+//   if (!s) throw new Error(`${name} required`);
+//   return s;
+// };
 
-    const databaseId = reqStr(body.databaseId, "databaseId");
-    const conversationsId = reqStr(
-      body.conversationsCollectionId,
-      "conversationsCollectionId"
-    );
-    const membershipsId = reqStr(
-      body.membershipsCollectionId,
-      "membershipsCollectionId"
-    );
-    const messagesId = reqStr(body.messagesCollectionId, "messagesCollectionId");
+// /**
+//  * Generate unique integer membershipId (because your schema requires integer)
+//  */
+// let membershipSeq = 0;
+// const nextMembershipId = () => {
+//   membershipSeq = (membershipSeq + 1) % 1000;
+//   return Date.now() * 1000 + membershipSeq; // integer unique
+// };
 
-    // User client (identify caller)
-    const userClient = new Client()
-      .setEndpoint(endpoint)
-      .setProject(projectId)
-      .setJWT(userJwt);
+// /**
+//  * Find Auth userId by email using Users API
+//  */
+// async function userIdByEmail(users, email) {
+//   const r = await users.list([Query.equal("email", email)]);
+//   return r.users && r.users[0] ? r.users[0].$id : null;
+// }
 
-    const me = await new Account(userClient).get();
-    const myUserId = String(me.$id);
+// module.exports = async ({ req, res, log, error }) => {
+//   try {
+//     const endpoint = process.env.APPWRITE_ENDPOINT;
+//     const projectId = process.env.APPWRITE_PROJECT_ID;
+//     const apiKey = process.env.APPWRITE_API_KEY;
 
-    // Admin client (write to DB)
-    const adminClient = new Client()
-      .setEndpoint(endpoint)
-      .setProject(projectId)
-      .setKey(apiKey);
+//     if (!endpoint || !projectId || !apiKey) {
+//       return json(res, { ok: false, error: "Missing env vars" }, 500);
+//     }
 
-    const db = new Databases(adminClient);
-    const users = new Users(adminClient);
+//     // Provided when a logged-in user executes the function
+//     const userJwt = req.headers["x-appwrite-user-jwt"] || "";
+//     if (!userJwt) {
+//       return json(res, { ok: false, error: "Not authenticated" }, 401);
+//     }
 
-    // Helper: check membership
-    const isMember = async (conversationId, userId) => {
-      const r = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("conversationId", String(conversationId)),
-        Query.equal("userId", String(userId)),
-        Query.limit(1),
-      ]);
-      return (r.documents || []).length > 0;
-    };
+//     // Parse JSON body (Flutter sends String body)
+//     let body = {};
+//     if (req.body) {
+//       body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+//     }
 
-    const membersOfConversation = async (conversationId) => {
-      const r = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("conversationId", String(conversationId)),
-        Query.limit(200),
-      ]);
-      return (r.documents || []).map((d) => String(d.userId));
-    };
+//     const action = (body.action || "").toString().trim();
 
-    const convReadPerms = (userIds) =>
-      userIds.map((uid) => Permission.read(Role.user(String(uid))));
+//     const databaseId = reqStr(body.databaseId, "databaseId");
+//     const conversationsId = reqStr(
+//       body.conversationsCollectionId,
+//       "conversationsCollectionId"
+//     );
+//     const membershipsId = reqStr(
+//       body.membershipsCollectionId,
+//       "membershipsCollectionId"
+//     );
+//     const messagesId = reqStr(body.messagesCollectionId, "messagesCollectionId");
 
-    const msgReadPerms = (userIds) =>
-      userIds.map((uid) => Permission.read(Role.user(String(uid))));
+//     // User client (identify caller)
+//     const userClient = new Client()
+//       .setEndpoint(endpoint)
+//       .setProject(projectId)
+//       .setJWT(userJwt);
 
-    /**
-     * ====== ACTION: createGroup ======
-     * payload:
-     * { title, memberEmails: [] }
-     */
-    if (action === "createGroup") {
-      const title = reqStr(body.title, "title");
-      const memberEmails = Array.isArray(body.memberEmails)
-        ? body.memberEmails
-        : [];
+//     const me = await new Account(userClient).get();
+//     const myUserId = String(me.$id);
 
-      const memberIdsSet = new Set([myUserId]);
+//     // Admin client (write to DB)
+//     const adminClient = new Client()
+//       .setEndpoint(endpoint)
+//       .setProject(projectId)
+//       .setKey(apiKey);
 
-      for (const email of memberEmails) {
-        const e = (email || "").toString().trim();
-        if (!e) continue;
-        const uid = await userIdByEmail(users, e);
-        if (uid) memberIdsSet.add(String(uid));
-      }
+//     const db = new Databases(adminClient);
+//     const users = new Users(adminClient);
 
-      const ids = Array.from(memberIdsSet);
-      const createdAt = nowIso();
+//     // Helper: check membership
+//     const isMember = async (conversationId, userId) => {
+//       const r = await db.listDocuments(databaseId, membershipsId, [
+//         Query.equal("conversationId", String(conversationId)),
+//         Query.equal("userId", String(userId)),
+//         Query.limit(1),
+//       ]);
+//       return (r.documents || []).length > 0;
+//     };
 
-      // Create conversation
-      const conv = await db.createDocument(
-        databaseId,
-        conversationsId,
-        ID.unique(),
-        {
-          type: "group",
-          title: title,
-          photoUrl: "",
-          createdBy: myUserId,
-          createdAt: createdAt,
-          lastMessageText: "",
-          lastMessageAt: null,
-          lastMessageSenderId: null,
-        },
-        [
-          ...convReadPerms(ids),
-          Permission.update(Role.user(myUserId)),
-          Permission.delete(Role.user(myUserId)),
-        ]
-      );
+//     const membersOfConversation = async (conversationId) => {
+//       const r = await db.listDocuments(databaseId, membershipsId, [
+//         Query.equal("conversationId", String(conversationId)),
+//         Query.limit(200),
+//       ]);
+//       return (r.documents || []).map((d) => String(d.userId));
+//     };
 
-      // Create memberships (must satisfy your required schema)
-      for (const uid of ids) {
-        const uidStr = String(uid);
-        await db.createDocument(
-          databaseId,
-          membershipsId,
-          ID.unique(),
-          {
-            membershipId: nextMembershipId(), // required integer
-            userId: uidStr, // required string (now fixed)
-            teamId: 1, // required integer in your schema (set a default)
-            role: uidStr === myUserId ? ROLE_ADMIN : ROLE_MEMBER, // required enum
-            membershipStatus: STATUS_ACTIVE, // required enum
-            joinedAt: createdAt, // required datetime
-            lastModifiedAt: createdAt,
-            lastReadAt: null,
-            conversationId: conv.$id, // string
-            mute: null, // your schema shows mute is string
-            pinned: false,
-            archived: false,
-          },
-          [
-            Permission.read(Role.user(uidStr)),
-            Permission.update(Role.user(uidStr)),
-          ]
-        );
-      }
+//     const convReadPerms = (userIds) =>
+//       userIds.map((uid) => Permission.read(Role.user(String(uid))));
 
-      return json(res, { ok: true, conversation: conv });
-    }
+//     const msgReadPerms = (userIds) =>
+//       userIds.map((uid) => Permission.read(Role.user(String(uid))));
 
-    /**
-     * ====== ACTION: createDm ======
-     * payload:
-     * { otherEmail }
-     */
-    if (action === "createDm") {
-      const otherEmail = reqStr(body.otherEmail, "otherEmail");
-      const otherUserId = await userIdByEmail(users, otherEmail);
+//     /**
+//      * ====== ACTION: createGroup ======
+//      * payload:
+//      * { title, memberEmails: [] }
+//      */
+//     if (action === "createGroup") {
+//       const title = reqStr(body.title, "title");
+//       const memberEmails = Array.isArray(body.memberEmails)
+//         ? body.memberEmails
+//         : [];
 
-      if (!otherUserId) {
-        return json(res, { ok: false, error: "User not found" }, 404);
-      }
+//       const memberIdsSet = new Set([myUserId]);
 
-      const otherId = String(otherUserId);
+//       for (const email of memberEmails) {
+//         const e = (email || "").toString().trim();
+//         if (!e) continue;
+//         const uid = await userIdByEmail(users, e);
+//         if (uid) memberIdsSet.add(String(uid));
+//       }
 
-      if (otherId === myUserId) {
-        return json(res, { ok: false, error: "Cannot DM yourself" }, 400);
-      }
+//       const ids = Array.from(memberIdsSet);
+//       const createdAt = nowIso();
 
-      // Try reuse existing DM
-      const myM = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("userId", myUserId),
-        Query.limit(200),
-      ]);
+//       // Create conversation
+//       const conv = await db.createDocument(
+//         databaseId,
+//         conversationsId,
+//         ID.unique(),
+//         {
+//           type: "group",
+//           title: title,
+//           photoUrl: "",
+//           createdBy: myUserId,
+//           createdAt: createdAt,
+//           lastMessageText: "",
+//           lastMessageAt: null,
+//           lastMessageSenderId: null,
+//         },
+//         [
+//           ...convReadPerms(ids),
+//           Permission.update(Role.user(myUserId)),
+//           Permission.delete(Role.user(myUserId)),
+//         ]
+//       );
 
-      const myConvIds = new Set((myM.documents || []).map((d) => d.conversationId));
+//       // Create memberships (must satisfy your required schema)
+//       for (const uid of ids) {
+//         const uidStr = String(uid);
+//         await db.createDocument(
+//           databaseId,
+//           membershipsId,
+//           ID.unique(),
+//           {
+//             membershipId: nextMembershipId(), // required integer
+//             userId: uidStr, // required string (now fixed)
+//             teamId: 1, // required integer in your schema (set a default)
+//             role: uidStr === myUserId ? ROLE_ADMIN : ROLE_MEMBER, // required enum
+//             membershipStatus: STATUS_ACTIVE, // required enum
+//             joinedAt: createdAt, // required datetime
+//             lastModifiedAt: createdAt,
+//             lastReadAt: null,
+//             conversationId: conv.$id, // string
+//             mute: null, // your schema shows mute is string
+//             pinned: false,
+//             archived: false,
+//           },
+//           [
+//             Permission.read(Role.user(uidStr)),
+//             Permission.update(Role.user(uidStr)),
+//           ]
+//         );
+//       }
 
-      const otherM = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("userId", otherId),
-        Query.limit(200),
-      ]);
+//       return json(res, { ok: true, conversation: conv });
+//     }
 
-      const shared = (otherM.documents || []).find((d) =>
-        myConvIds.has(d.conversationId)
-      );
+//     /**
+//      * ====== ACTION: createDm ======
+//      * payload:
+//      * { otherEmail }
+//      */
+//     if (action === "createDm") {
+//       const otherEmail = reqStr(body.otherEmail, "otherEmail");
+//       const otherUserId = await userIdByEmail(users, otherEmail);
 
-      if (shared) {
-        const existing = await db.getDocument(
-          databaseId,
-          conversationsId,
-          shared.conversationId
-        );
-        if (existing.type === "dm") {
-          return json(res, { ok: true, conversation: existing, reused: true });
-        }
-      }
+//       if (!otherUserId) {
+//         return json(res, { ok: false, error: "User not found" }, 404);
+//       }
 
-      const createdAt = nowIso();
-      const ids = [myUserId, otherId];
+//       const otherId = String(otherUserId);
 
-      // Create conversation
-      const conv = await db.createDocument(
-        databaseId,
-        conversationsId,
-        ID.unique(),
-        {
-          type: "dm",
-          title: "",
-          photoUrl: "",
-          createdBy: myUserId,
-          createdAt: createdAt,
-          lastMessageText: "",
-          lastMessageAt: null,
-          lastMessageSenderId: null,
-        },
-        [
-          ...convReadPerms(ids),
-          Permission.update(Role.user(myUserId)),
-          Permission.delete(Role.user(myUserId)),
-        ]
-      );
+//       if (otherId === myUserId) {
+//         return json(res, { ok: false, error: "Cannot DM yourself" }, 400);
+//       }
 
-      // Create memberships (must satisfy your required schema)
-      for (const uid of ids) {
-        const uidStr = String(uid);
-        await db.createDocument(
-          databaseId,
-          membershipsId,
-          ID.unique(),
-          {
-            membershipId: nextMembershipId(),
-            userId: uidStr,
-            teamId: 1,
-            role: uidStr === myUserId ? ROLE_ADMIN : ROLE_MEMBER,
-            membershipStatus: STATUS_ACTIVE,
-            joinedAt: createdAt,
-            lastModifiedAt: createdAt,
-            lastReadAt: null,
-            conversationId: conv.$id,
-            mute: null,
-            pinned: false,
-            archived: false,
-          },
-          [
-            Permission.read(Role.user(uidStr)),
-            Permission.update(Role.user(uidStr)),
-          ]
-        );
-      }
+//       // Try reuse existing DM
+//       const myM = await db.listDocuments(databaseId, membershipsId, [
+//         Query.equal("userId", myUserId),
+//         Query.limit(200),
+//       ]);
 
-      return json(res, { ok: true, conversation: conv, reused: false });
-    }
+//       const myConvIds = new Set((myM.documents || []).map((d) => d.conversationId));
 
-    /**
-     * ====== ACTION: sendMessage ======
-     * payload:
-     * { conversationId, text }
-     */
-    if (action === "sendMessage") {
-      const conversationId = reqStr(body.conversationId, "conversationId");
-      const text = reqStr(body.text, "text");
+//       const otherM = await db.listDocuments(databaseId, membershipsId, [
+//         Query.equal("userId", otherId),
+//         Query.limit(200),
+//       ]);
 
-      if (!(await isMember(conversationId, myUserId))) {
-        return json(res, { ok: false, error: "Not a member" }, 403);
-      }
+//       const shared = (otherM.documents || []).find((d) =>
+//         myConvIds.has(d.conversationId)
+//       );
 
-      const memberIds = await membersOfConversation(conversationId);
-      const createdAt = nowIso();
+//       if (shared) {
+//         const existing = await db.getDocument(
+//           databaseId,
+//           conversationsId,
+//           shared.conversationId
+//         );
+//         if (existing.type === "dm") {
+//           return json(res, { ok: true, conversation: existing, reused: true });
+//         }
+//       }
 
-      const msg = await db.createDocument(
-        databaseId,
-        messagesId,
-        ID.unique(),
-        {
-          conversationId: String(conversationId),
-          senderId: myUserId,
-          type: "text",
-          text: text,
-          createdAt: createdAt,
-          status: "sent",
-          deliveredAt: null,
-          readAt: null,
-        },
-        [...msgReadPerms(memberIds), Permission.delete(Role.user(myUserId))]
-      );
+//       const createdAt = nowIso();
+//       const ids = [myUserId, otherId];
 
-      await db.updateDocument(databaseId, conversationsId, String(conversationId), {
-        lastMessageText: text,
-        lastMessageAt: createdAt,
-        lastMessageSenderId: myUserId,
-      });
+//       // Create conversation
+//       const conv = await db.createDocument(
+//         databaseId,
+//         conversationsId,
+//         ID.unique(),
+//         {
+//           type: "dm",
+//           title: "",
+//           photoUrl: "",
+//           createdBy: myUserId,
+//           createdAt: createdAt,
+//           lastMessageText: "",
+//           lastMessageAt: null,
+//           lastMessageSenderId: null,
+//         },
+//         [
+//           ...convReadPerms(ids),
+//           Permission.update(Role.user(myUserId)),
+//           Permission.delete(Role.user(myUserId)),
+//         ]
+//       );
 
-      return json(res, { ok: true, message: msg });
-    }
+//       // Create memberships (must satisfy your required schema)
+//       for (const uid of ids) {
+//         const uidStr = String(uid);
+//         await db.createDocument(
+//           databaseId,
+//           membershipsId,
+//           ID.unique(),
+//           {
+//             membershipId: nextMembershipId(),
+//             userId: uidStr,
+//             teamId: 1,
+//             role: uidStr === myUserId ? ROLE_ADMIN : ROLE_MEMBER,
+//             membershipStatus: STATUS_ACTIVE,
+//             joinedAt: createdAt,
+//             lastModifiedAt: createdAt,
+//             lastReadAt: null,
+//             conversationId: conv.$id,
+//             mute: null,
+//             pinned: false,
+//             archived: false,
+//           },
+//           [
+//             Permission.read(Role.user(uidStr)),
+//             Permission.update(Role.user(uidStr)),
+//           ]
+//         );
+//       }
 
-    /**
-     * ====== ACTION: markRead ======
-     * payload:
-     * { conversationId }
-     */
-    if (action === "markRead") {
-      const conversationId = reqStr(body.conversationId, "conversationId");
+//       return json(res, { ok: true, conversation: conv, reused: false });
+//     }
 
-      const r = await db.listDocuments(databaseId, membershipsId, [
-        Query.equal("conversationId", String(conversationId)),
-        Query.equal("userId", myUserId),
-        Query.limit(1),
-      ]);
+//     /**
+//      * ====== ACTION: sendMessage ======
+//      * payload:
+//      * { conversationId, text }
+//      */
+//     if (action === "sendMessage") {
+//       const conversationId = reqStr(body.conversationId, "conversationId");
+//       const text = reqStr(body.text, "text");
 
-      if (!r.documents || r.documents.length === 0) {
-        return json(res, { ok: false, error: "Membership not found" }, 404);
-      }
+//       if (!(await isMember(conversationId, myUserId))) {
+//         return json(res, { ok: false, error: "Not a member" }, 403);
+//       }
 
-      const doc = r.documents[0];
-      const updated = await db.updateDocument(databaseId, membershipsId, doc.$id, {
-        lastReadAt: nowIso(),
-        lastModifiedAt: nowIso(),
-      });
+//       const memberIds = await membersOfConversation(conversationId);
+//       const createdAt = nowIso();
 
-      return json(res, { ok: true, membership: updated });
-    }
+//       const msg = await db.createDocument(
+//         databaseId,
+//         messagesId,
+//         ID.unique(),
+//         {
+//           conversationId: String(conversationId),
+//           senderId: myUserId,
+//           type: "text",
+//           text: text,
+//           createdAt: createdAt,
+//           status: "sent",
+//           deliveredAt: null,
+//           readAt: null,
+//         },
+//         [...msgReadPerms(memberIds), Permission.delete(Role.user(myUserId))]
+//       );
 
-    return json(res, { ok: false, error: "Unknown action" }, 400);
-  } catch (e) {
-    if (error) error(e);
-    return json(
-      res,
-      { ok: false, error: String(e && e.message ? e.message : e) },
-      500
-    );
-  }
-};
+//       await db.updateDocument(databaseId, conversationsId, String(conversationId), {
+//         lastMessageText: text,
+//         lastMessageAt: createdAt,
+//         lastMessageSenderId: myUserId,
+//       });
+
+//       return json(res, { ok: true, message: msg });
+//     }
+
+//     /**
+//      * ====== ACTION: markRead ======
+//      * payload:
+//      * { conversationId }
+//      */
+//     if (action === "markRead") {
+//       const conversationId = reqStr(body.conversationId, "conversationId");
+
+//       const r = await db.listDocuments(databaseId, membershipsId, [
+//         Query.equal("conversationId", String(conversationId)),
+//         Query.equal("userId", myUserId),
+//         Query.limit(1),
+//       ]);
+
+//       if (!r.documents || r.documents.length === 0) {
+//         return json(res, { ok: false, error: "Membership not found" }, 404);
+//       }
+
+//       const doc = r.documents[0];
+//       const updated = await db.updateDocument(databaseId, membershipsId, doc.$id, {
+//         lastReadAt: nowIso(),
+//         lastModifiedAt: nowIso(),
+//       });
+
+//       return json(res, { ok: true, membership: updated });
+//     }
+
+//     return json(res, { ok: false, error: "Unknown action" }, 400);
+//   } catch (e) {
+//     if (error) error(e);
+//     return json(
+//       res,
+//       { ok: false, error: String(e && e.message ? e.message : e) },
+//       500
+//     );
+//   }
+// };
