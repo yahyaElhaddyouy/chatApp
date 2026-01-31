@@ -63,18 +63,18 @@ module.exports = async (context) => {
 
     // Retrieve the request body
     const body = await getBodyJson(req);  // This will fetch the request body
-    log.log("Received request body:", body);  // Log the body for debugging
+    context.log("Received request body:", body);  // Log the body for debugging
 
     const { action, otherEmail, userId } = body;
 
     // Ensure action is present
     if (!action) {
-      log.log("Missing action in request body.");  // Log if action is missing
+      context.log("Missing action in request body.");  // Log if action is missing
       return json(400, { ok: false, error: "MISSING_ACTION" });
     }
 
     // Log the action for debugging purposes
-    log.log("Action received:", action);
+    context.log("Action received:", action);
 
     // Proceed with action processing
     if (action === "createDm") {
