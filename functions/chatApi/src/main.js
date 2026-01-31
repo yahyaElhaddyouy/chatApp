@@ -4,6 +4,7 @@ const DATABASE_ID = "697baca3000c020a5b31";  // Your Database ID
 const CONVERSATIONS_COL = "conversations";    // Conversations collection
 const MEMBERSHIPS_COL = "memberships";        // Memberships collection
 const MESSAGES_COL = "messages";              // Messages collection
+const USERS_COL = "users";                    // Users collection
 
 // Helper to return JSON response
 function json(status, body) {
@@ -42,7 +43,7 @@ module.exports = async (context) => {
 
     // Initialize the client for Users API and Database
     const client = new sdk.Client();
-    client.setEndpoint('https://nyc.cloud.appwrite.io/v1');
+    client.setEndpoint('https://cloud.appwrite.io/v1');
     client.setProject('697b95cd000a52d5cf5b');
     client.setKey(process.env.APPWRITE_API_KEY);
 
@@ -75,15 +76,15 @@ module.exports = async (context) => {
         return json(400, { ok: false, error: "MISSING_FIELDS" });
       }
 
-      // 1. Find the user by email (using Appwrite's Users API)
-      const userList = await users.list(encodeURIComponent(otherEmail), 1);
+      // 1. Find the user by email (using database query)
+      const userDocs = await db.listDocuments(DATABASE_ID, USERS_COL, [sdk.Query.equal("email", otherEmail)], 1);
 
-      if (!userList.users || userList.users.length === 0) {
+      if (!userDocs.documents || userDocs.documents.length === 0) {
         context.log("User not found with email:", otherEmail);
         return json(404, { ok: false, error: "USER_NOT_FOUND" });
       }
 
-      const otherUser = userList.users[0];
+      const otherUser = userDocs.documents[0];
 
       // 2. Prevent creating a DM with yourself
       if (userId === otherUser.$id) {
