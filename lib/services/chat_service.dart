@@ -70,34 +70,24 @@ class ChatService {
     });
   }
 
-  // Optionnel (si tu l'implémentes côté backend)
-  Future<Map<String, dynamic>> listMessages({
-    required String conversationId,
-    int limit = 50,
-    String? cursor,
-  }) async {
-    return _call({
-      'action': 'listMessages',
-      'databaseId': Environment.databaseId,
-      'messagesCollectionId': Environment.messagesCollectionId,
-      'conversationId': conversationId,
-      'limit': limit,
-      if (cursor != null) 'cursor': cursor,
-    });
-  }
+  // Fetch all conversations for the current user
+Future<Map<String, dynamic>> listConversations() async {
+  return _call({
+    "action": "listConversations",
+    "databaseId": Environment.databaseId,
+    "membershipsCollectionId": Environment.membershipsCollectionId,
+  });
+}
 
-  // Optionnel (si tu l'implémentes côté backend)
-  Future<Map<String, dynamic>> listConversations({
-    int limit = 50,
-    String? cursor,
-  }) async {
-    return _call({
-      'action': 'listConversations',
-      'databaseId': Environment.databaseId,
-      'conversationsCollectionId': Environment.conversationsCollectionId,
-      'membershipsCollectionId': Environment.membershipsCollectionId,
-      'limit': limit,
-      if (cursor != null) 'cursor': cursor,
-    });
-  }
+// Fetch all messages for a specific conversation
+Future<Map<String, dynamic>> listMessages({
+  required String conversationId,
+}) async {
+  return _call({
+    "action": "listMessages",
+    "databaseId": Environment.databaseId,
+    "messagesCollectionId": Environment.messagesCollectionId,
+    "conversationId": conversationId,
+  });
+}
 }

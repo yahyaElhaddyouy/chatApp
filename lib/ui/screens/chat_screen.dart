@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../services/chat_service.dart';
-import '../../state/session_provider.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
@@ -13,119 +12,128 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final chatService = ChatService();
-  final msgC = TextEditingController();
-  bool sending = false;
+  final msgController = TextEditingController();
+  List<Map<String, dynamic>> messages = [];
+  bool loadingMessages = false;
 
-  // until listMessages is implemented: optimistic local list
-  final List<Map<String, dynamic>> messages = [];
+  // Load messages for the conversation
+  Future<void> _loadMessages() async {
+    setState(() {
+      loadingMessages = true;
+    });
 
-  @override
-  void dispose() {
-    msgC.dispose();
-    super.dispose();
-  }
+    final res = await chatService.listMessages(conversationId: widget.conversationId);
 
-  Future<void> _send() async {
-    final text = msgC.text.trim();
-    if (text.isEmpty) return;
+    setState(() {
+      loadingMessages = false;
+    });
 
-    setState(() => sending = true);
-
-    try {
-      final res = await chatService.sendMessage(
-        conversationId: widget.conversationId,
-        text: text,
-      );
-
-      if (res['ok'] == true) {
-        msgC.clear();
-        setState(() {
-          messages.insert(0, res['message'] as Map<String, dynamic>);
-        });
-      } else {
-        final err = (res['error'] ?? res.toString()).toString();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err)));
-      }
-    } finally {
-      if (mounted) setState(() => sending = false);
+    if (res['ok'] == true) {
+      final messagesList = res['messages'] as List;
+      setState(() {
+        messages = messagesList.map((e) => e as Map<String, dynamic>).toList();
+      });
+    } else {
+      // Handle error (showing snackbar)
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(res['error'] ?? 'Failed to load messages'),
+      ));
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final me = context.read<SessionProvider>().user?.$id;
+  void initState() {
+    super.initState();
+    _loadMessages();
+  }
 
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text("Chat")),
       body: Column(
         children: [
           Expanded(
-            child: messages.isEmpty
-                ? const Center(child: Text("Say hi 👋"))
-                : ListView.builder(
-                    reverse: true,
-                    padding: const EdgeInsets.all(12),
-                    itemCount: messages.length,
-                    itemBuilder: (context, i) {
-                      final m = messages[i];
-                      final text = (m['text'] ?? '').toString();
-                      final senderId = (m['senderId'] ?? '').toString();
-                      final isMe = me != null && senderId == me;
+            child: loadingMessages
+                ? const Center(child: CircularProgressIndicator())
+                : messages.isEmpty
+                    ? const Center(child: Text("No messages yet"))
+                    : ListView.builder(
+                        reverse: true,
+                        itemCount: messages.length,
+                        itemBuilder: (context, index) {
+                          final message = messages[index];
+                          final senderId = message['senderId'];
+                          final text = message['text'];
+                          final isMe = senderId == 'currentUserId'; // Replace with the actual user ID
 
-                      return Align(
-                        alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Container(
-                          margin: const EdgeInsets.symmetric(vertical: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          constraints: const BoxConstraints(maxWidth: 320),
-                          decoration: BoxDecoration(
-                            color: isMe
-                                ? Theme.of(context).colorScheme.primary
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(16),
-                            border: isMe ? null : Border.all(color: const Color(0xFFE6E6F0)),
-                          ),
-                          child: Text(
-                            text,
-                            style: TextStyle(
-                              color: isMe ? Colors.white : Colors.black87,
+                          return Align(
+                            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                            child: Container(
+                              margin: const EdgeInsets.symmetric(vertical: 6),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              constraints: const BoxConstraints(maxWidth: 300),
+                              decoration: BoxDecoration(
+                                color: isMe ? Colors.blue : Colors.grey.shade300,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                text,
+                                style: TextStyle(color: isMe ? Colors.white : Colors.black),
+                              ),
                             ),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
+                          );
+                        },
+                      ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: msgC,
-                      decoration: const InputDecoration(hintText: "Message..."),
-                      onSubmitted: (_) => _send(),
-                    ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: msgController,
+                    decoration: const InputDecoration(hintText: "Type a message..."),
                   ),
-                  const SizedBox(width: 8),
-                  SizedBox(
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: sending ? null : _send,
-                      child: sending
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.send),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  icon: const Icon(Icons.send),
+                  onPressed: () {
+                    if (msgController.text.isNotEmpty) {
+                      _sendMessage();
+                    }
+                  },
+                ),
+              ],
             ),
-          )
+          ),
         ],
       ),
     );
+  }
+
+  // Send message
+  Future<void> _sendMessage() async {
+    final text = msgController.text.trim();
+    if (text.isEmpty) return;
+
+    final res = await chatService.sendMessage(
+      conversationId: widget.conversationId,
+      text: text,
+    );
+
+    if (res['ok'] == true) {
+      msgController.clear();
+      // Add message to the list (optimistic UI update)
+      setState(() {
+        messages.insert(0, res['message'] as Map<String, dynamic>);
+      });
+    } else {
+      // Handle error (showing snackbar)
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(res['error'] ?? 'Failed to send message'),
+      ));
+    }
   }
 }
