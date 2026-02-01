@@ -111,4 +111,11 @@ class ChatService {
       return null;
     }
   }
+   // Mark conversation as delivered (updates membership.lastReadAt or similar)
+  Future<void> markConversationDelivered(String conversationId) async {
+  await _call({
+    "action": "markDelivered",
+    "conversationId": conversationId,
+  });
+}
 }

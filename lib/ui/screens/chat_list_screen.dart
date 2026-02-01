@@ -152,8 +152,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                 context.read<ThemeProvider>().toggleDarkLight(),
             icon: Icon(
               context.watch<ThemeProvider>().mode == ThemeMode.dark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
             ),
           ),
           IconButton(

@@ -24,6 +24,28 @@ class _ChatScreenState extends State<ChatScreen> {
   String? currentUserId;
   StreamSubscription? _realtimeSub;
 
+  /* ================= MESSAGE STATUS ================= */
+  Widget _buildStatus(Map<String, dynamic> msg) {
+    if (msg['senderId'] != currentUserId) {
+      return const SizedBox(); // seulement pour mes messages
+    }
+
+    final status = msg['status'];
+
+    switch (status) {
+      case 'sent':
+        return const Text('✓', style: TextStyle(fontSize: 10));
+      case 'delivered':
+        return const Text('✓✓', style: TextStyle(fontSize: 10));
+      case 'read':
+        return const Text('✓✓ Seen', style: TextStyle(fontSize: 10));
+      case 'sending':
+        return const Text('…', style: TextStyle(fontSize: 10));
+      default:
+        return const SizedBox();
+    }
+  }
+
   /* ================= LOAD MESSAGES ================= */
   Future<void> _loadMessages() async {
     setState(() => loadingMessages = true);
@@ -36,6 +58,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (res['ok'] == true) {
       final list = res['messages'] as List;
       setState(() {
+        //msgController.clear();
         messages = list.map((e) => e as Map<String, dynamic>).toList();
       });
 
@@ -49,26 +72,73 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   /* ================= REALTIME ================= */
+  // void _subscribeRealtime() {
+  //   _realtimeSub = AppwriteClient.realtime
+  //       .subscribe([
+  //         'databases.${Environment.databaseId}.collections.messages.documents'
+  //       ])
+  //       .stream
+  //       .listen((event) {
+  //         final payload = Map<String, dynamic>.from(event.payload);
+
+  //         if (payload['conversationId'] != widget.conversationId) return;
+
+  //         setState(() {
+  //           // 1️⃣ Cherche un message local équivalent (same text + sender)
+  //           final localIndex = messages.indexWhere((m) =>
+  //               m['isLocal'] == true &&
+  //               m['text'] == payload['text'] &&
+  //               m['senderId'] == payload['senderId']);
+
+  //           if (localIndex != -1) {
+  //             // 🔁 REMPLACE l’optimistic par le vrai message backend
+  //             messages[localIndex] = payload;
+  //             return;
+  //           }
+
+  //           // 2️⃣ Sinon : UPDATE d’un message existant
+  //           final index =
+  //               messages.indexWhere((m) => m['\$id'] == payload['\$id']);
+
+  //           if (index != -1) {
+  //             messages[index] = payload;
+  //             return;
+  //           }
+
+  //           // 3️⃣ Sinon : NOUVEAU message (reçu de l’autre user)
+  //           messages.insert(0, payload);
+  //         });
+  //       });
+  // }
+
   void _subscribeRealtime() {
-    _realtimeSub = AppwriteClient.realtime
-        .subscribe([
-          'databases.${Environment.databaseId}.collections.messages.documents'
-        ])
-        .stream
-        .listen((event) {
-          final payload = event.payload;
-          if (payload['conversationId'] != widget.conversationId) return;
+  _realtimeSub = AppwriteClient.realtime
+      .subscribe([
+        'databases.${Environment.databaseId}.collections.messages.documents'
+      ])
+      .stream
+      .listen((event) {
+        final payload = Map<String, dynamic>.from(event.payload);
 
-          // Prevent duplicates
-          final exists =
-              messages.any((m) => m['\$id'] == payload['\$id']);
-          if (exists) return;
+        // ⛔ Ignore les autres conversations
+        if (payload['conversationId'] != widget.conversationId) return;
 
-          setState(() {
-            messages.insert(0, Map<String, dynamic>.from(payload));
-          });
+        setState(() {
+          // 1️⃣ UPDATE : message existe déjà → on met à jour le statut
+          final index =
+              messages.indexWhere((m) => m['\$id'] == payload['\$id']);
+
+          if (index != -1) {
+            messages[index] = payload; // ✅ ICI le status change
+            return;
+          }
+
+          // 2️⃣ INSERT : message reçu de l’autre utilisateur
+          messages.insert(0, payload);
         });
-  }
+      });
+}
+
 
   /* ================= INIT ================= */
   @override
@@ -81,6 +151,8 @@ class _ChatScreenState extends State<ChatScreen> {
     final user = await AppwriteClient.account.get();
     currentUserId = user.$id;
     await _loadMessages();
+    await chatService.markConversationDelivered(widget.conversationId);
+    await chatService.markConversationRead(widget.conversationId);
     _subscribeRealtime();
   }
 
@@ -107,6 +179,7 @@ class _ChatScreenState extends State<ChatScreen> {
       'conversationId': widget.conversationId,
       'createdAt': DateTime.now().toIso8601String(),
       'status': 'sending',
+      'isLocal': true,
     };
 
     setState(() => messages.insert(0, optimisticMsg));
@@ -164,20 +237,27 @@ class _ChatScreenState extends State<ChatScreen> {
                                   vertical: 6, horizontal: 12),
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 10),
-                              constraints:
-                                  const BoxConstraints(maxWidth: 280),
+                              constraints: const BoxConstraints(maxWidth: 280),
                               decoration: BoxDecoration(
-                                color: isMe
-                                    ? Colors.blue
-                                    : Colors.grey.shade300,
+                                color:
+                                    isMe ? Colors.blue : Colors.grey.shade300,
                                 borderRadius: BorderRadius.circular(14),
                               ),
-                              child: Text(
-                                msg['text'] ?? '',
-                                style: TextStyle(
-                                  color:
-                                      isMe ? Colors.white : Colors.black87,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: isMe
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    msg['text'] ?? '',
+                                    style: TextStyle(
+                                      color:
+                                          isMe ? Colors.white : Colors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  _buildStatus(msg), // 👈 ICI
+                                ],
                               ),
                             ),
                           );
