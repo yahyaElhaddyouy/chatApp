@@ -129,17 +129,22 @@ module.exports = async (context) => {
       ]);
 
       for (const membership of existingMemberships.documents || []) {
-        const conversation = await db.getDocument(DATABASE_ID, CONVERSATIONS_COL, membership.conversationId);
-        if (conversation.type === "dm") {
-          // Check if the other user is also in this conversation
-          const otherMemberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-            sdk.Query.equal("conversationId", membership.conversationId),
-            sdk.Query.equal("userId", otherUser.$id),
-          ]);
-          if (otherMemberships.documents && otherMemberships.documents.length > 0) {
-            // DM already exists, return it
-            return json(200, { ok: true, conversationId: membership.conversationId, reused: true });
+        try {
+          const conversation = await db.getDocument(DATABASE_ID, CONVERSATIONS_COL, membership.conversationId);
+          if (conversation.type === "dm") {
+            // Check if the other user is also in this conversation
+            const otherMemberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+              sdk.Query.equal("conversationId", membership.conversationId),
+              sdk.Query.equal("userId", otherUser.$id),
+            ]);
+            if (otherMemberships.documents && otherMemberships.documents.length > 0) {
+              // DM already exists, return it
+              return json(200, { ok: true, conversationId: membership.conversationId, reused: true });
+            }
           }
+        } catch (e) {
+          // Conversation might have been deleted, skip it
+          continue;
         }
       }
 
