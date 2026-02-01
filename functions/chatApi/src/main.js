@@ -348,6 +348,65 @@ module.exports = async (context) => {
 
       return json(200, { ok: true, message: msg });
     }
+/* ================== ACTION: listMessages ================== */
+    if (action === "listMessages") {
+      const { conversationId, limit = 50, offset = 0 } = body;
+
+      if (!conversationId) {
+        return json(400, { ok: false, error: "conversationId is required" });
+      }
+
+      // 1) Vérifier que l'utilisateur est membre de la conversation
+      const membershipCheck = await db.listDocuments(
+        DATABASE_ID,
+        MEMBERSHIPS_COL,
+        [
+          sdk.Query.equal("conversationId", conversationId),
+          sdk.Query.equal("userId", currentUserId),
+          sdk.Query.limit(1),
+        ]
+      );
+
+      if ((membershipCheck.documents || []).length === 0) {
+        return json(403, { ok: false, error: "Not a member of this conversation" });
+      }
+
+      // 2) Récupérer les messages
+      const res = await db.listDocuments(
+        DATABASE_ID,
+        MESSAGES_COL,
+        [
+          sdk.Query.equal("conversationId", conversationId),
+          sdk.Query.orderAsc("$createdAt"),
+          sdk.Query.limit(Math.min(limit, 100)),
+          sdk.Query.offset(offset),
+        ]
+      );
+
+      // 3) Mapper les messages (strictement selon ton schéma)
+      const messages = (res.documents || []).map((m) => ({
+        $id: m.$id,
+        messageId: m.messageId,
+        text: m.text,
+        conversationId: m.conversationId,
+        senderId: m.senderId,
+        type: m.type,
+        status: m.status,
+        readBy: m.readBy,
+        createdAt: m.createdAt,
+        updatedAt: m.updatedAt,
+        readAt: m.readAt,
+      }));
+
+      return json(200, {
+        ok: true,
+        messages,
+        total: res.total,
+        limit,
+        offset,
+      });
+    }
+
 
     return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
 
@@ -356,4 +415,3 @@ module.exports = async (context) => {
     return json(e.code || 500, { ok: false, error: e.message });
   }
 };
-
