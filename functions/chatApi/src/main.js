@@ -123,6 +123,26 @@ module.exports = async (context) => {
         return json(400, { ok: false, error: "CANNOT_DM_SELF" });
       }
 
+      // Check if a DM already exists between the two users
+      const existingMemberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+        sdk.Query.equal("userId", currentUserId),
+      ]);
+
+      for (const membership of existingMemberships.documents || []) {
+        const conversation = await db.getDocument(DATABASE_ID, CONVERSATIONS_COL, membership.conversationId);
+        if (conversation.type === "dm") {
+          // Check if the other user is also in this conversation
+          const otherMemberships = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+            sdk.Query.equal("conversationId", membership.conversationId),
+            sdk.Query.equal("userId", otherUser.$id),
+          ]);
+          if (otherMemberships.documents && otherMemberships.documents.length > 0) {
+            // DM already exists, return it
+            return json(200, { ok: true, conversationId: membership.conversationId, reused: true });
+          }
+        }
+      }
+
       const now = nowIso();
       const teamId = 1; // your schema: required, min 1
       const role = "member"; // must match your enum values
@@ -331,270 +351,4 @@ module.exports = async (context) => {
     return json(e.code || 500, { ok: false, error: e.message });
   }
 };
-
-// const sdk = require("node-appwrite");
-
-// /* ================= CONFIG ================= */
-// const DATABASE_ID = "697baca3000c020a5b31";
-// const CONVERSATIONS_COL = "conversations";
-// const MEMBERSHIPS_COL = "memberships";
-// const MESSAGES_COL = "messages";
-
-// /* ================= HELPERS ================= */
-// function json(status, body) {
-//   return { statusCode: status, body: JSON.stringify(body) };
-// }
-
-// async function getBodyJson(req) {
-//   if (req.bodyJson) return req.bodyJson;
-//   if (!req.body) return {};
-//   try {
-//     return typeof req.body === "string" ? JSON.parse(req.body) : req.body;
-//   } catch {
-//     return {};
-//   }
-// }
-
-// function genIntId() {
-//   return Date.now() * 1000 + Math.floor(Math.random() * 1000);
-// }
-
-// /* ================= MAIN ================= */
-// module.exports = async (context) => {
-//   const { req, log } = context;
-
-//   try {
-//     const body = await getBodyJson(req);
-//     log("Received:", body);
-
-//     const { action } = body;
-//     if (!action) return json(400, { ok: false, error: "MISSING_ACTION" });
-
-//     const client = new sdk.Client()
-//       .setEndpoint(process.env.APPWRITE_ENDPOINT)
-//       .setProject(process.env.APPWRITE_PROJECT_ID)
-//       .setKey(process.env.APPWRITE_API_KEY);
-
-//     const db = new sdk.Databases(client);
-//     const usersApi = new sdk.Users(client);
-
-//     /* =====================================================
-//        CREATE DM (NO DUPLICATION)
-//     ===================================================== */
-//     if (action === "createDm") {
-//       const { userId, otherEmail } = body;
-//       if (!userId || !otherEmail)
-//         return json(400, { ok: false, error: "MISSING_FIELDS" });
-
-//       const users = await usersApi.list([
-//         sdk.Query.equal("email", otherEmail),
-//         sdk.Query.limit(1),
-//       ]);
-//       if (!users.users.length)
-//         return json(404, { ok: false, error: "USER_NOT_FOUND" });
-
-//       const otherUser = users.users[0];
-
-//       // 🔒 Check existing DM
-//       const myMemberships = await db.listDocuments(
-//         DATABASE_ID,
-//         MEMBERSHIPS_COL,
-//         [sdk.Query.equal("userId", userId)]
-//       );
-
-//       for (const m of myMemberships.documents) {
-//         const otherMembership = await db.listDocuments(
-//           DATABASE_ID,
-//           MEMBERSHIPS_COL,
-//           [
-//             sdk.Query.equal("conversationId", m.conversationId),
-//             sdk.Query.equal("userId", otherUser.$id),
-//           ]
-//         );
-//         if (otherMembership.documents.length) {
-//           return json(200, {
-//             ok: true,
-//             conversationId: m.conversationId,
-//             reused: true,
-//           });
-//         }
-//       }
-
-//       const now = new Date().toISOString();
-//       const perms = [
-//         `read("user:${userId}")`,
-//         `read("user:${otherUser.$id}")`,
-//         `update("user:${userId}")`,
-//         `update("user:${otherUser.$id}")`,
-//       ];
-
-//       const convo = await db.createDocument(
-//         DATABASE_ID,
-//         CONVERSATIONS_COL,
-//         sdk.ID.unique(),
-//         {
-//           type: "dm",
-//           createdBy: userId,
-//           createdAt: now,
-//           lastMessageText: "",
-//           lastMessageAt: null,
-//           lastMessageSenderId: null,
-//         },
-//         perms
-//       );
-
-//       for (const uid of [userId, otherUser.$id]) {
-//         await db.createDocument(
-//           DATABASE_ID,
-//           MEMBERSHIPS_COL,
-//           sdk.ID.unique(),
-//           {
-//             membershipId: genIntId(),
-//             teamId: 1,
-//             role: "member",
-//             membershipStatus: "active",
-//             joinedAt: now,
-//             conversationId: convo.$id,
-//             userId: uid,
-//             pinned: false,
-//             archived: false,
-//           },
-//           perms
-//         );
-//       }
-
-//       return json(200, { ok: true, conversationId: convo.$id });
-//     }
-
-//     /* =====================================================
-//        LIST CONVERSATIONS
-//     ===================================================== */
-//     if (action === "listConversations") {
-//       // 1) get memberships for current user
-//       const ms = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-//         sdk.Query.equal("userId", currentUserId),
-//         sdk.Query.limit(100),
-//       ]);
-
-//       const memberships = ms.documents || [];
-//       if (memberships.length === 0) {
-//         return json(200, { ok: true, conversations: [] });
-//       }
-
-//       const conversationIds = memberships.map((m) => m.conversationId).filter(Boolean);
-
-//       // 2) fetch conversations in batches (Query.equal("$id", [...]))
-//       const convDocs = [];
-//       for (const batch of chunk(conversationIds, 100)) {
-//         const convRes = await db.listDocuments(DATABASE_ID, CONVERSATIONS_COL, [
-//           sdk.Query.equal("$id", batch),
-//           sdk.Query.limit(100),
-//         ]);
-//         convDocs.push(...(convRes.documents || []));
-//       }
-
-//       // 3) build response with "other user" name/email as title
-//       const out = [];
-
-//       for (const convo of convDocs) {
-//         // find other member
-//         const otherMs = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-//           sdk.Query.equal("conversationId", convo.$id),
-//           sdk.Query.notEqual("userId", currentUserId),
-//           sdk.Query.limit(1),
-//         ]);
-
-//         const otherMembership = (otherMs.documents || [])[0];
-//         let title = "DM";
-//         let otherUserId = null;
-
-//         if (otherMembership?.userId) {
-//           otherUserId = otherMembership.userId;
-//           try {
-//             const otherUser = await usersApi.get(otherUserId);
-//             title = otherUser.name || otherUser.email || "DM";
-//           } catch {
-//             title = "DM";
-//           }
-//         }
-
-//         out.push({
-//           $id: convo.$id,
-//           type: convo.type,
-//           title,
-//           otherUserId,
-//           lastMessageText: convo.lastMessageText || "No messages",
-//           lastMessageAt: convo.lastMessageAt,
-//           lastMessageSenderId: convo.lastMessageSenderId,
-//         });
-//       }
-
-//       // Optional: sort by lastMessageAt / createdAt descending
-//       out.sort((a, b) => {
-//         const ta = a.lastMessageAt || "";
-//         const tb = b.lastMessageAt || "";
-//         return tb.localeCompare(ta);
-//       });
-
-//       return json(200, { ok: true, conversations: out });
-//     }
-//     /* =====================================================
-//        LIST MESSAGES
-//     ===================================================== */
-//     if (action === "listMessages") {
-//       const { conversationId } = body;
-//       const msgs = await db.listDocuments(
-//         DATABASE_ID,
-//         MESSAGES_COL,
-//         [
-//           sdk.Query.equal("conversationId", conversationId),
-//           sdk.Query.orderAsc("createdAt"),
-//         ]
-//       );
-//       return json(200, { ok: true, messages: msgs.documents });
-//     }
-
-//     /* =====================================================
-//        SEND MESSAGE (NO deliveredAt)
-//     ===================================================== */
-//     if (action === "sendMessage") {
-//       const { conversationId, senderId, text } = body;
-//       if (!conversationId || !senderId || !text)
-//         return json(400, { ok: false, error: "MISSING_FIELDS" });
-
-//       const now = new Date().toISOString();
-
-//       const msg = await db.createDocument(
-//         DATABASE_ID,
-//         MESSAGES_COL,
-//         sdk.ID.unique(),
-//         {
-//           messageId: genIntId(),
-//           conversationId,
-//           senderId,
-//           text,
-//           createdAt: now,
-//         }
-//       );
-
-//       await db.updateDocument(
-//         DATABASE_ID,
-//         CONVERSATIONS_COL,
-//         conversationId,
-//         {
-//           lastMessageText: text,
-//           lastMessageAt: now,
-//           lastMessageSenderId: senderId,
-//         }
-//       );
-
-//       return json(200, { ok: true, message: msg });
-//     }
-
-//     return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
-//   } catch (e) {
-//     console.error(e);
-//     return json(500, { ok: false, error: e.message });
-//   }
-// };
 
