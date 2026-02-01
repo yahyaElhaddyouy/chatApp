@@ -65,7 +65,80 @@ module.exports = async (context) => {
     }
 
     if (action === "createDm") {
-      return await createDm(currentUserId, otherEmail);
+      // return await createDm(currentUserId, otherEmail);
+      if (action === "createDm") {
+  const { otherEmail } = body;
+
+  if (!otherEmail) {
+    return json(400, { ok: false, error: "MISSING_OTHER_EMAIL" });
+  }
+
+  const list = await users.list([
+    sdk.Query.equal("email", otherEmail),
+    sdk.Query.limit(1),
+  ]);
+
+  if (!list.users || list.users.length === 0) {
+    return json(404, { ok: false, error: "USER_NOT_FOUND" });
+  }
+
+  const otherUser = list.users[0];
+
+  if (otherUser.$id === currentUserId) {
+    return json(400, { ok: false, error: "CANNOT_DM_SELF" });
+  }
+
+  const perms = [
+    `read("user:${currentUserId}")`,
+    `read("user:${otherUser.$id}")`,
+    `update("user:${currentUserId}")`,
+    `update("user:${otherUser.$id}")`,
+    `delete("user:${currentUserId}")`,
+    `delete("user:${otherUser.$id}")`,
+  ];
+
+  const convo = await db.createDocument(
+    DATABASE_ID,
+    CONVERSATIONS_COL,
+    sdk.ID.unique(),
+    {
+      type: "dm",
+      createdAt: new Date().toISOString(),
+      lastMessageText: "",
+      lastMessageAt: null,
+    },
+    perms
+  );
+
+  await db.createDocument(
+    DATABASE_ID,
+    MEMBERSHIPS_COL,
+    sdk.ID.unique(),
+    {
+      membershipId: genIntId(),
+      teamId: 0,
+      conversationId: convo.$id,
+      userId: currentUserId,
+    },
+    perms
+  );
+
+  await db.createDocument(
+    DATABASE_ID,
+    MEMBERSHIPS_COL,
+    sdk.ID.unique(),
+    {
+      membershipId: genIntId(),
+      teamId: 0,
+      conversationId: convo.$id,
+      userId: otherUser.$id,
+    },
+    perms
+  );
+
+  return json(200, { ok: true, conversationId: convo.$id });
+}
+
     }
 
     if (action === "listConversations") {
@@ -103,12 +176,13 @@ async function createDm(currentUserId, otherEmail) {
   }
 
   const perms = [
-    `read("user:${currentUserId}")`,
-    `read("user:${otherUser.$id}")`,
-    `update("user:${currentUserId}")`,
-    `update("user:${otherUser.$id}")`,
-  ];
-
+  `read("user:${currentUserId}")`,
+  `read("user:${otherUser.$id}")`,
+  `update("user:${currentUserId}")`,
+  `update("user:${otherUser.$id}")`,
+  `delete("user:${currentUserId}")`,
+  `delete("user:${otherUser.$id}")`,
+];
   const convo = await db.createDocument(
     DATABASE_ID,
     CONVERSATIONS_COL,
@@ -124,12 +198,14 @@ async function createDm(currentUserId, otherEmail) {
 
   await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
     membershipId: genIntId(),
+    teamId: 0,
     conversationId: convo.$id,
     userId: currentUserId,
   }, perms);
 
   await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
     membershipId: genIntId(),
+    teamId: 0,
     conversationId: convo.$id,
     userId: otherUser.$id,
   }, perms);
