@@ -419,7 +419,7 @@ module.exports = async (context) => {
         MESSAGES_COL,
         [
           sdk.Query.equal("conversationId", conversationId),
-          sdk.Query.orderAsc("$createdAt"),
+          sdk.Query.orderDesc("$createdAt"),
           sdk.Query.limit(Math.min(limit, 100)),
           sdk.Query.offset(offset),
         ]
