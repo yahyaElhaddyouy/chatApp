@@ -450,31 +450,31 @@ module.exports = async (context) => {
     }
 
     /* ================== ACTION: mark Read ================== */
-    if (action === "markRead") {
-      const { conversationId } = body;
-      if (!conversationId) return json(400, { ok: false, error: "MISSING_CONVERSATION_ID" });
+    // if (action === "markRead") {
+    //   const { conversationId } = body;
+    //   if (!conversationId) return json(400, { ok: false, error: "MISSING_CONVERSATION_ID" });
 
-      // membership du user dans cette conversation
-      const ms = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-        sdk.Query.equal("conversationId", conversationId),
-        sdk.Query.equal("userId", currentUserId),
-        sdk.Query.limit(1),
-      ]);
+    //   // membership du user dans cette conversation
+    //   const ms = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+    //     sdk.Query.equal("conversationId", conversationId),
+    //     sdk.Query.equal("userId", currentUserId),
+    //     sdk.Query.limit(1),
+    //   ]);
 
-      const membership = (ms.documents || [])[0];
-      if (!membership) return json(403, { ok: false, error: "NOT_A_MEMBER" });
+    //   const membership = (ms.documents || [])[0];
+    //   if (!membership) return json(403, { ok: false, error: "NOT_A_MEMBER" });
 
-      const nowIso = new Date().toISOString();
+    //   const nowIso = new Date().toISOString();
 
-      const updated = await db.updateDocument(
-        DATABASE_ID,
-        MEMBERSHIPS_COL,
-        membership.$id,
-        { lastReadAt: nowIso }
-      );
+    //   const updated = await db.updateDocument(
+    //     DATABASE_ID,
+    //     MEMBERSHIPS_COL,
+    //     membership.$id,
+    //     { lastReadAt: nowIso }
+    //   );
 
-      return json(200, { ok: true, lastReadAt: updated.lastReadAt });
-    }
+    //   return json(200, { ok: true, lastReadAt: updated.lastReadAt });
+    // }
 
 
     return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
