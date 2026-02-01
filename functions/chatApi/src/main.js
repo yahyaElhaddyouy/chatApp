@@ -8,8 +8,8 @@ const USERS_COL = "users";                    // Users collection
 // Initialize the client for Users API and Database
 const client = new sdk.Client();
 client.setEndpoint('https://nyc.cloud.appwrite.io/v1');
-    client.setProject('697b95cd000a52d5cf5b');
-    client.setKey(process.env.APPWRITE_API_KEY);
+client.setProject('697b95cd000a52d5cf5b');
+client.setKey(process.env.APPWRITE_API_KEY);
 
 const db = new sdk.Databases(client);
 const users = new sdk.Users(client);
@@ -96,14 +96,14 @@ async function createDm(context, otherEmail, userId, currentUserId) {
       return json(400, { ok: false, error: "MISSING_FIELDS" });
     }
 
-    // Find the user by email (using Appwrite's Users API)
-    const userList = await users.list([sdk.Query.equal("email", otherEmail), sdk.Query.limit(1)]);
+    // Find the user by email (using database query)
+    const userDocs = await db.listDocuments(DATABASE_ID, USERS_COL, [sdk.Query.equal("email", otherEmail)], 1);
 
-    if (!userList.users || userList.users.length === 0) {
+    if (!userDocs.documents || userDocs.documents.length === 0) {
       return json(404, { ok: false, error: "USER_NOT_FOUND" });
     }
 
-    const otherUser = userList.users[0];
+    const otherUser = userDocs.documents[0];
 
     // Prevent creating a DM with yourself
     if (userId === otherUser.$id) {
@@ -170,37 +170,52 @@ async function createDm(context, otherEmail, userId, currentUserId) {
 // Function to list conversations for a specific user
 async function listConversations(context, userId) {
   try {
-    // Query memberships for the current user
-    const membershipsList = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
-      sdk.Query.equal("userId", userId),
-    ]);
+    if (action === "listConversations") {
+      const memberships = await db.listDocuments(
+        DATABASE_ID,
+        MEMBERSHIPS_COL,
+        [sdk.Query.equal("userId", userId)]
+      );
 
-    if (!membershipsList.documents || membershipsList.documents.length === 0) {
-      return json(200, { ok: true, conversations: [] });
+      if (memberships.documents.length === 0) {
+        return json(200, { ok: true, conversations: [] });
+      }
+
+      const conversations = [];
+
+      for (const m of memberships.documents) {
+        const convo = await db.getDocument(
+          DATABASE_ID,
+          CONVERSATIONS_COL,
+          m.conversationId
+        );
+
+        // find the other member
+        const otherMembers = await db.listDocuments(
+          DATABASE_ID,
+          MEMBERSHIPS_COL,
+          [
+            sdk.Query.equal("conversationId", m.conversationId),
+            sdk.Query.notEqual("userId", userId),
+          ]
+        );
+
+        if (otherMembers.documents.length !== 1) continue;
+
+        const otherUserId = otherMembers.documents[0].userId;
+        const otherUser = await users.get(otherUserId);
+
+        conversations.push({
+          $id: convo.$id,
+          title: otherUser.name || otherUser.email,
+          lastMessageText: convo.lastMessageText ?? "No messages",
+          lastMessageAt: convo.lastMessageAt,
+        });
+      }
+
+      return json(200, { ok: true, conversations });
     }
 
-    const conversations = [];
-
-    for (const membership of membershipsList.documents) {
-      const conversationId = membership.conversationId;
-
-      // Fetch conversation details
-      const conversation = await db.getDocument(DATABASE_ID, CONVERSATIONS_COL, conversationId);
-
-      // Find the other user in the membership
-      const otherUserId = membership.userId === userId ? membership.otherUserId : membership.userId;
-      const otherUser = await users.get(otherUserId);
-
-      // Construct the conversation response
-      conversations.push({
-        $id: conversation.$id,
-        title: otherUser.name || otherUser.email,  // Add the other user's name as the title
-        lastMessageText: conversation.lastMessageText || 'No messages',
-        lastMessageAt: conversation.lastMessageAt || null,
-      });
-    }
-
-    return json(200, { ok: true, conversations });
   } catch (e) {
     console.error("Error listing conversations:", e);
     return json(500, { ok: false, error: e.message });

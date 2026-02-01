@@ -2,10 +2,11 @@ import 'package:appwrite/appwrite.dart';
 import 'package:chat_app_cloud/services/appwrite_client.dart';
 import 'package:chat_app_cloud/state/session_provider.dart';
 import 'package:flutter/material.dart';
-import '../../services/chat_service.dart';
-import 'chat_screen.dart';
 import 'package:provider/provider.dart';
+
+import '../../services/chat_service.dart';
 import '../../state/theme_provider.dart';
+import 'chat_screen.dart';
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -16,43 +17,46 @@ class ChatListScreen extends StatefulWidget {
 
 class _ChatListScreenState extends State<ChatListScreen> {
   final chatService = ChatService();
+
   List<Map<String, dynamic>> conversations = [];
   bool loadingConversations = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadConversations();  // Charge les conversations dès que l'écran est initialisé
-  }
-
-  // Fetch conversations for the current user
-  Future<void> _loadConversations() async {
-    setState(() {
-      loadingConversations = true;
-    });
-
-    final res = await chatService.listConversations();
-
-    setState(() {
-      loadingConversations = false;
-    });
-
-    if (res['ok'] == true) {
-      final conversationsList = res['conversations'] as List;
-      setState(() {
-        conversations = conversationsList.map((e) => e as Map<String, dynamic>).toList();
-      });
-    } else {
-      // Handle error (showing snackbar)
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(res['error'] ?? 'Failed to load conversations'),
-      ));
-    }
-  }
 
   bool loading = false;
   String? err;
 
+  // ================= INIT =================
+  @override
+  void initState() {
+    super.initState();
+    _loadConversations();
+  }
+
+  // ================= LOAD CONVERSATIONS =================
+  Future<void> _loadConversations() async {
+    if (!mounted) return;
+
+    setState(() => loadingConversations = true);
+
+    final res = await chatService.listConversations();
+
+    if (!mounted) return;
+
+    setState(() => loadingConversations = false);
+
+    if (res['ok'] == true) {
+      final list = (res['conversations'] as List)
+          .map((e) => e as Map<String, dynamic>)
+          .toList();
+
+      setState(() => conversations = list);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(res['error'] ?? 'Failed to load conversations')),
+      );
+    }
+  }
+
+  // ================= LOGOUT =================
   Future<void> _logout() async {
     setState(() {
       loading = true;
@@ -62,17 +66,17 @@ class _ChatListScreenState extends State<ChatListScreen> {
     try {
       await context.read<SessionProvider>().logout();
     } catch (e) {
-      setState(() => err = e.toString());
+      if (mounted) setState(() => err = e.toString());
     } finally {
       if (mounted) setState(() => loading = false);
     }
   }
 
-  // Open a bottom sheet for the user to input email and create a new DM
+  // ================= CREATE DM =================
   Future<void> _openNewDmSheet() async {
     final emailC = TextEditingController();
 
-    await showModalBottomSheet<String>(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -87,8 +91,10 @@ class _ChatListScreenState extends State<ChatListScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text("New DM",
-                  style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+              const Text(
+                "New DM",
+                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+              ),
               const SizedBox(height: 12),
               TextField(
                 controller: emailC,
@@ -98,27 +104,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
               const SizedBox(height: 12),
               ElevatedButton(
                 onPressed: () async {
-                  if (emailC.text.isNotEmpty) {
-                    final user = await AppwriteClient.account.get();
-                    final userId =
-                        user.$id; // Extract the userId from the response
-                    final response = await chatService.createDm(
-                      otherEmail: emailC.text,
-                      userId: userId, // Pass the actual userId
-                    );
+                  if (emailC.text.trim().isEmpty) return;
 
-                    if (response['ok'] == true) {
-                      // Close the sheet
-                      Navigator.pop(ctx, emailC.text);
-                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                        content: Text('DM created successfully'),
-                      ));
-                    } else {
-                      ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                  final user = await AppwriteClient.account.get();
+                  final userId = user.$id;
+
+                  final res = await chatService.createDm(
+                    otherEmail: emailC.text.trim(),
+                    userId: userId,
+                  );
+
+                  if (!mounted) return;
+
+                  if (res['ok'] == true) {
+                    Navigator.pop(ctx);
+
+                    // 🔥 RAFRAÎCHIS LA LISTE
+                    await _loadConversations();
+                  } else {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(
                         content:
-                            Text(response['error'] ?? 'Failed to create DM'),
-                      ));
-                    }
+                            Text(res['error'] ?? 'Failed to create DM'),
+                      ),
+                    );
                   }
                 },
                 child: const Text("Create DM"),
@@ -130,6 +139,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
     );
   }
 
+  // ================= UI =================
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -138,7 +148,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
         actions: [
           IconButton(
             tooltip: "Toggle theme",
-            onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
+            onPressed: () =>
+                context.read<ThemeProvider>().toggleDarkLight(),
             icon: Icon(
               context.watch<ThemeProvider>().mode == ThemeMode.dark
                   ? Icons.light_mode
@@ -152,31 +163,30 @@ class _ChatListScreenState extends State<ChatListScreen> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _openNewDmSheet, // Open the bottom sheet to create new DM
+        onPressed: _openNewDmSheet,
         child: const Icon(Icons.add),
       ),
       body: loadingConversations
           ? const Center(child: CircularProgressIndicator())
           : conversations.isEmpty
-              ? const Center(child: Text("No chats yet. Create a DM above."))
+              ? const Center(
+                  child: Text("No chats yet. Create a DM above."),
+                )
               : ListView.builder(
                   itemCount: conversations.length,
                   itemBuilder: (context, index) {
-                    final conversation = conversations[index];
-                    final title = conversation['title'] ?? 'DM';
-                    final lastMessage =
-                        conversation['lastMessageText'] ?? 'No messages';
-                    final conversationId = conversation['\$id'];
+                    final c = conversations[index];
 
                     return ListTile(
-                      title: Text(title),
-                      subtitle: Text(lastMessage),
+                      title: Text(c['title'] ?? 'DM'),
+                      subtitle:
+                          Text(c['lastMessageText'] ?? 'No messages'),
                       onTap: () {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
                             builder: (_) =>
-                                ChatScreen(conversationId: conversationId),
+                                ChatScreen(conversationId: c['\$id']),
                           ),
                         );
                       },
