@@ -327,7 +327,7 @@ module.exports = async (context) => {
           readBy: null,
           type: "text",
           status: "sent",
-          deliveredAt: null,
+          //deliveredAt: null,
           readAt: null,
         },
         perms
