@@ -77,27 +77,35 @@ class ChatService {
     });
   }
 
+  // Mark conversation as read (updates membership.lastReadAt or similar)
+  Future<Map<String, dynamic>> markConversationRead(
+      String conversationId) async {
+    return await _call({
+      "action": "markRead",
+      "conversationId": conversationId,
+    });
+  }
+
   // Create a new Direct Message (DM)
   Future<Map<String, dynamic>> createDm({
-  required String otherEmail,
-  required String userId,
-}) async {
-  final payload = {
-    "action": "createDm",  // Ensure action is passed
-    "otherEmail": otherEmail,
-    "userId": userId,  // Fetch the real userId dynamically
-  };
+    required String otherEmail,
+    required String userId,
+  }) async {
+    final payload = {
+      "action": "createDm", // Ensure action is passed
+      "otherEmail": otherEmail,
+      "userId": userId, // Fetch the real userId dynamically
+    };
 
-  return _call(payload);  // Call the function with the payload
-}
-
+    return _call(payload); // Call the function with the payload
+  }
 
   // Fetch the logged-in userId from Appwrite Account
   Future<String?> getUserId() async {
     try {
       final account = Account(AppwriteClient.client);
       final user = await account.get(); // Get the current logged-in user
-      return user.$id;  // Return the user ID
+      return user.$id; // Return the user ID
     } catch (e) {
       print('Error fetching user info: $e');
       return null;

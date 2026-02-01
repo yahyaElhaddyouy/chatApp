@@ -75,6 +75,42 @@ function chunk(arr, size) {
   return out;
 }
 
+async function findExistingDm(db, currentUserId, otherUserId) {
+  // memberships du current user
+  const myMs = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+    sdk.Query.equal("userId", currentUserId),
+    sdk.Query.limit(100),
+  ]);
+
+  const memberships = myMs.documents || [];
+  for (const m of memberships) {
+    if (!m.conversationId) continue;
+
+    // conversation peut être supprimée → try/catch
+    let convo;
+    try {
+      convo = await db.getDocument(DATABASE_ID, CONVERSATIONS_COL, m.conversationId);
+    } catch {
+      continue;
+    }
+
+    if (convo.type !== "dm") continue;
+
+    // vérifier que otherUser est membre de CE convo
+    const otherMs = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+      sdk.Query.equal("conversationId", convo.$id),
+      sdk.Query.equal("userId", otherUserId),
+      sdk.Query.limit(1),
+    ]);
+
+    if ((otherMs.documents || []).length > 0) {
+      return convo.$id; // DM existe déjà
+    }
+  }
+
+  return null; // pas trouvé
+}
+
 /* ================== MAIN ================== */
 module.exports = async (context) => {
   const { req, log } = context;
@@ -121,6 +157,12 @@ module.exports = async (context) => {
       const otherUser = found.users[0];
       if (otherUser.$id === currentUserId) {
         return json(400, { ok: false, error: "CANNOT_DM_SELF" });
+      }
+
+      // ✅ anti-duplication : chercher DM existant
+      const existingId = await findExistingDm(db, currentUserId, otherUser.$id);
+      if (existingId) {
+        return json(200, { ok: true, conversationId: existingId, reused: true });
       }
 
       // Check if a DM already exists between the two users
@@ -348,7 +390,7 @@ module.exports = async (context) => {
 
       return json(200, { ok: true, message: msg });
     }
-/* ================== ACTION: listMessages ================== */
+    /* ================== ACTION: listMessages ================== */
     if (action === "listMessages") {
       const { conversationId, limit = 50, offset = 0 } = body;
 
@@ -405,6 +447,33 @@ module.exports = async (context) => {
         limit,
         offset,
       });
+    }
+
+    /* ================== ACTION: mark Read ================== */
+    if (action === "markRead") {
+      const { conversationId } = body;
+      if (!conversationId) return json(400, { ok: false, error: "MISSING_CONVERSATION_ID" });
+
+      // membership du user dans cette conversation
+      const ms = await db.listDocuments(DATABASE_ID, MEMBERSHIPS_COL, [
+        sdk.Query.equal("conversationId", conversationId),
+        sdk.Query.equal("userId", currentUserId),
+        sdk.Query.limit(1),
+      ]);
+
+      const membership = (ms.documents || [])[0];
+      if (!membership) return json(403, { ok: false, error: "NOT_A_MEMBER" });
+
+      const nowIso = new Date().toISOString();
+
+      const updated = await db.updateDocument(
+        DATABASE_ID,
+        MEMBERSHIPS_COL,
+        membership.$id,
+        { lastReadAt: nowIso }
+      );
+
+      return json(200, { ok: true, lastReadAt: updated.lastReadAt });
     }
 
 
