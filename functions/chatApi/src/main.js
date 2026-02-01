@@ -1,223 +1,184 @@
 const sdk = require("node-appwrite");
 
-const DATABASE_ID = "697baca3000c020a5b31";  // Your Database ID
-const CONVERSATIONS_COL = "conversations";    // Conversations collection
-const MEMBERSHIPS_COL = "memberships";        // Memberships collection
-const USERS_COL = "users";                    // Users collection
+/* ================== CONFIG ================== */
 
-// Initialize the client for Users API and Database
-const client = new sdk.Client();
-client.setEndpoint('https://nyc.cloud.appwrite.io/v1');
-client.setProject('697b95cd000a52d5cf5b');
-client.setKey(process.env.APPWRITE_API_KEY);
+const ENDPOINT = "https://nyc.cloud.appwrite.io/v1";
+const PROJECT_ID = "697b95cd000a52d5cf5b";
+
+const DATABASE_ID = "697baca3000c020a5b31";
+const CONVERSATIONS_COL = "conversations";
+const MEMBERSHIPS_COL = "memberships";
+const USERS_COL = "users";  
+
+/* ================== CLIENT ================== */
+
+const client = new sdk.Client()
+  .setEndpoint(ENDPOINT)
+  .setProject(PROJECT_ID)
+  .setKey(process.env.APPWRITE_API_KEY);
 
 const db = new sdk.Databases(client);
 const users = new sdk.Users(client);
 
-// Helper to return JSON response
+/* ================== HELPERS ================== */
+
 function json(status, body) {
   return {
     statusCode: status,
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
   };
 }
 
-// Helper to handle request body JSON parsing
 async function getBodyJson(req) {
   if (req.bodyJson && typeof req.bodyJson === "object") return req.bodyJson;
-
-  const raw = req.body;
-  if (!raw) return {};
-  if (typeof raw === "object") return raw;
-
+  if (!req.body) return {};
+  if (typeof req.body === "object") return req.body;
   try {
-    return JSON.parse(raw);
+    return JSON.parse(req.body);
   } catch {
     return {};
   }
 }
 
-// Function to generate a unique membershipId (Integer)
 function genIntId() {
-  const ts = Date.now(); // 13-digit timestamp
-  const rnd = Math.floor(Math.random() * 1000); // Random 3 digits
-  return ts * 1000 + rnd; // Unique integer
+  return Date.now() * 1000 + Math.floor(Math.random() * 1000);
 }
 
-// Main function to handle actions
-module.exports = async (context) => {
-  try {
-    const { req, res, log, error } = context;
+/* ================== MAIN ================== */
 
-    // Retrieve the request body
+module.exports = async (context) => {
+  const { req, log } = context;
+
+  try {
     const body = await getBodyJson(req);
     log("Received request body:", body);
 
-    const { action, otherEmail, userId } = body;
+    const { action, otherEmail } = body;
 
-    // Ensure action is present
     if (!action) {
-      log("Missing action in request body.");
       return json(400, { ok: false, error: "MISSING_ACTION" });
     }
 
-    log("Action received:", action);
-
-    // Get the current user ID from headers
-    const currentUserId = req.headers['x-appwrite-user-id'];
+    const currentUserId = req.headers["x-appwrite-user-id"];
     if (!currentUserId) {
       return json(401, { ok: false, error: "UNAUTHORIZED" });
     }
 
-    // Process the action based on the type
     if (action === "createDm") {
-      return await createDm(context, otherEmail, userId, currentUserId);
+      return await createDm(currentUserId, otherEmail);
     }
 
     if (action === "listConversations") {
-      return await listConversations(context, currentUserId);
+      return await listConversations(currentUserId);
     }
 
-    return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
+    return json(404, { ok: false, error: "UNKNOWN_ACTION" });
 
   } catch (e) {
-    console.error("Error processing the request:", e); // Log error for debugging
+    console.error(e);
     return json(500, { ok: false, error: e.message });
   }
 };
 
-// Function to create a new DM
-async function createDm(context, otherEmail, userId, currentUserId) {
-  try {
-    const nowIso = new Date().toISOString();
+/* ================== CREATE DM ================== */
 
-    // Ensure userId and otherEmail are provided
-    if (!otherEmail || !userId) {
-      return json(400, { ok: false, error: "MISSING_FIELDS" });
-    }
+async function createDm(currentUserId, otherEmail) {
+  if (!otherEmail) {
+    return json(400, { ok: false, error: "MISSING_OTHER_EMAIL" });
+  }
 
-    // Find the user by email (using database query)
-    const userDocs = await db.listDocuments(DATABASE_ID, USERS_COL, [sdk.Query.equal("email", otherEmail)], 1);
+  const list = await users.list([
+    sdk.Query.equal("email", otherEmail),
+    sdk.Query.limit(1),
+  ]);
 
-    if (!userDocs.documents || userDocs.documents.length === 0) {
-      return json(404, { ok: false, error: "USER_NOT_FOUND" });
-    }
+  if (list.users.length === 0) {
+    return json(404, { ok: false, error: "USER_NOT_FOUND" });
+  }
 
-    const otherUser = userDocs.documents[0];
+  const otherUser = list.users[0];
 
-    // Prevent creating a DM with yourself
-    if (userId === otherUser.$id) {
-      return json(400, { ok: false, error: "CANNOT_DM_SELF" });
-    }
+  if (otherUser.$id === currentUserId) {
+    return json(400, { ok: false, error: "CANNOT_DM_SELF" });
+  }
 
-    // Define conversation permissions
-    const perms = [
-      `read("user:${userId}")`,
-      `read("user:${otherUser.$id}")`,
-      `update("user:${userId}")`,
-      `update("user:${otherUser.$id}")`,
-      `delete("user:${userId}")`,
-      `delete("user:${otherUser.$id}")`,
-    ];
+  const perms = [
+    `read("user:${currentUserId}")`,
+    `read("user:${otherUser.$id}")`,
+    `update("user:${currentUserId}")`,
+    `update("user:${otherUser.$id}")`,
+  ];
 
-    // Create the conversation
-    const conversation = await db.createDocument(DATABASE_ID, CONVERSATIONS_COL, sdk.ID.unique(), {
+  const convo = await db.createDocument(
+    DATABASE_ID,
+    CONVERSATIONS_COL,
+    sdk.ID.unique(),
+    {
       type: "dm",
-      createdBy: userId,
-      createdAt: nowIso,
+      createdAt: new Date().toISOString(),
       lastMessageText: "",
       lastMessageAt: null,
-      lastMessageSenderId: null,
-    }, perms);
+    },
+    perms
+  );
 
-    // Create membership for the first user
-    const teamIdInt = 1; // Integer required
-    const roleValue = "member";
-    const statusValue = "active";
+  await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
+    membershipId: genIntId(),
+    conversationId: convo.$id,
+    userId: currentUserId,
+  }, perms);
 
-    await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
-      membershipId: genIntId(),
-      teamId: teamIdInt,
-      role: roleValue,
-      membershipStatus: statusValue,
-      joinedAt: nowIso,
-      conversationId: conversation.$id,
-      userId: userId,
-      pinned: false,
-      archived: false,
-    }, perms);
+  await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
+    membershipId: genIntId(),
+    conversationId: convo.$id,
+    userId: otherUser.$id,
+  }, perms);
 
-    // Create membership for the second user
-    await db.createDocument(DATABASE_ID, MEMBERSHIPS_COL, sdk.ID.unique(), {
-      membershipId: genIntId(),
-      teamId: teamIdInt,
-      role: roleValue,
-      membershipStatus: statusValue,
-      joinedAt: nowIso,
-      conversationId: conversation.$id,
-      userId: otherUser.$id,
-      pinned: false,
-      archived: false,
-    }, perms);
-
-    return json(200, { ok: true, conversation, reused: false });
-  } catch (e) {
-    console.error("Error creating DM:", e);
-    return json(500, { ok: false, error: e.message });
-  }
+  return json(200, { ok: true, conversationId: convo.$id });
 }
 
-// Function to list conversations for a specific user
-async function listConversations(context, userId) {
-  try {
-    if (action === "listConversations") {
-      const memberships = await db.listDocuments(
-        DATABASE_ID,
-        MEMBERSHIPS_COL,
-        [sdk.Query.equal("userId", userId)]
-      );
+/* ================== LIST CONVERSATIONS ================== */
 
-      if (memberships.documents.length === 0) {
-        return json(200, { ok: true, conversations: [] });
-      }
+async function listConversations(userId) {
+  const memberships = await db.listDocuments(
+    DATABASE_ID,
+    MEMBERSHIPS_COL,
+    [sdk.Query.equal("userId", userId)]
+  );
 
-      const conversations = [];
-
-      for (const m of memberships.documents) {
-        const convo = await db.getDocument(
-          DATABASE_ID,
-          CONVERSATIONS_COL,
-          m.conversationId
-        );
-
-        // find the other member
-        const otherMembers = await db.listDocuments(
-          DATABASE_ID,
-          MEMBERSHIPS_COL,
-          [
-            sdk.Query.equal("conversationId", m.conversationId),
-            sdk.Query.notEqual("userId", userId),
-          ]
-        );
-
-        if (otherMembers.documents.length !== 1) continue;
-
-        const otherUserId = otherMembers.documents[0].userId;
-        const otherUser = await users.get(otherUserId);
-
-        conversations.push({
-          $id: convo.$id,
-          title: otherUser.name || otherUser.email,
-          lastMessageText: convo.lastMessageText ?? "No messages",
-          lastMessageAt: convo.lastMessageAt,
-        });
-      }
-
-      return json(200, { ok: true, conversations });
-    }
-
-  } catch (e) {
-    console.error("Error listing conversations:", e);
-    return json(500, { ok: false, error: e.message });
+  if (memberships.documents.length === 0) {
+    return json(200, { ok: true, conversations: [] });
   }
+
+  const result = [];
+
+  for (const m of memberships.documents) {
+    const convo = await db.getDocument(
+      DATABASE_ID,
+      CONVERSATIONS_COL,
+      m.conversationId
+    );
+
+    const others = await db.listDocuments(
+      DATABASE_ID,
+      MEMBERSHIPS_COL,
+      [
+        sdk.Query.equal("conversationId", m.conversationId),
+        sdk.Query.notEqual("userId", userId),
+      ]
+    );
+
+    if (others.documents.length !== 1) continue;
+
+    const otherUser = await users.get(others.documents[0].userId);
+
+    result.push({
+      $id: convo.$id,
+      title: otherUser.name || otherUser.email,
+      lastMessageText: convo.lastMessageText || "No messages",
+      lastMessageAt: convo.lastMessageAt,
+    });
+  }
+
+  return json(200, { ok: true, conversations: result });
 }
