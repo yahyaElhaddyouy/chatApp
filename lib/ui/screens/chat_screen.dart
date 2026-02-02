@@ -9,7 +9,12 @@ import '../../config/environment.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
-  const ChatScreen({super.key, required this.conversationId});
+  final String otherUserId; // ✅ NEW
+  const ChatScreen({
+    super.key,
+    required this.conversationId,
+    required this.otherUserId,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -70,16 +75,16 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     // final deliveredAt = msg['deliveredAt'];
     // final readAt = msg['readAt'];
 
-    
-
     // Sinon status
     switch (status) {
       case 'sent':
         return Text("✓",
-            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
+            style:
+                TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
       case 'sending':
         return Text("…",
-            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
+            style:
+                TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
       default:
         // si backend ne met pas status, on ne casse pas l’UI
         return const SizedBox();
@@ -109,7 +114,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       lines.add(
         Text(
           "${_formatTime(readAt)} ✓✓",
-          style: TextStyle(fontSize: 11, color: const Color.fromARGB(255, 94, 0, 156).withOpacity(0.75)),
+          style: TextStyle(
+              fontSize: 11,
+              color: const Color.fromARGB(255, 94, 0, 156).withOpacity(0.75)),
         ),
       );
     }
@@ -117,7 +124,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (lines.isEmpty) return const SizedBox();
     return Padding(
       padding: const EdgeInsets.only(top: 3),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: lines),
+      child:
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: lines),
     );
   }
 
@@ -125,7 +133,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Future<void> _loadMessages() async {
     setState(() => loadingMessages = true);
 
-    final res = await chatService.listMessages(conversationId: widget.conversationId);
+    final res =
+        await chatService.listMessages(conversationId: widget.conversationId);
 
     setState(() => loadingMessages = false);
 
@@ -134,7 +143,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (res['ok'] == true) {
       final list = (res['messages'] as List? ?? []);
       // IMPORTANT: on garde l’ordre DESC (plus récent en premier) car tu utilises reverse:true
-      final mapped = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final mapped =
+          list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
       setState(() {
         messages = mapped;
@@ -190,7 +200,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             }
 
             // 2) si c’est une mise à jour d’un message existant (readAt/deliveredAt/status…)
-            final idx = messages.indexWhere((m) => m[r'$id'] == payload[r'$id']);
+            final idx =
+                messages.indexWhere((m) => m[r'$id'] == payload[r'$id']);
             if (idx != -1) {
               messages[idx] = payload;
               _recomputeLastMyMessageId();
@@ -203,7 +214,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           });
 
           // Si le message vient de l’autre user, on marque delivered/read immédiatement
-          if (payload['senderId'] != null && payload['senderId'] != currentUserId) {
+          if (payload['senderId'] != null &&
+              payload['senderId'] != currentUserId) {
             _scheduleMarkDeliveredRead();
           }
         });
@@ -288,7 +300,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Chat"),
+        title: Text(widget.otherUserId),
         actions: [
           IconButton(
             tooltip: "Toggle theme",
@@ -316,24 +328,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                           final isMe = msg['senderId'] == currentUserId;
 
                           final msgId = msg[r'$id']?.toString();
-                          final isLastMine = isMe && msgId != null && msgId == _lastMyMessageId;
+                          final isLastMine = isMe &&
+                              msgId != null &&
+                              msgId == _lastMyMessageId;
 
-                          final bubbleColor = isMe ? Colors.blue : Colors.grey.shade300;
-                          final textColor = isMe ? Colors.white : Colors.black87;
+                          final bubbleColor =
+                              isMe ? Colors.blue : Colors.grey.shade300;
+                          final textColor =
+                              isMe ? Colors.white : Colors.black87;
 
                           return Align(
-                            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
+                            alignment: isMe
+                                ? Alignment.centerRight
+                                : Alignment.centerLeft,
                             child: Container(
-                              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              margin: const EdgeInsets.symmetric(
+                                  vertical: 6, horizontal: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 10),
                               constraints: const BoxConstraints(maxWidth: 300),
                               decoration: BoxDecoration(
                                 color: bubbleColor,
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: Column(
-                                crossAxisAlignment:
-                                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                                crossAxisAlignment: isMe
+                                    ? CrossAxisAlignment.end
+                                    : CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     msg['text'] ?? '',
@@ -361,7 +382,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                                   ),
 
                                   // Lignes Delivered/Seen uniquement sur le dernier message "à moi"
-                                  if (isMe) _buildDeliveredSeenLines(msg, isLastMine),
+                                  if (isMe)
+                                    _buildDeliveredSeenLines(msg, isLastMine),
                                 ],
                               ),
                             ),

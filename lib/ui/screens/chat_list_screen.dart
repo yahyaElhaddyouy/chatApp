@@ -109,7 +109,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Chats'),
+        title: const Text('Aji Ndwiwi'),
         actions: [
           IconButton(
             onPressed: () =>
@@ -136,7 +136,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (_) =>
-                            ChatScreen(conversationId: convo['\$id']),
+                            ChatScreen(conversationId: convo['\$id'], otherUserId: convo['title'],),
                       ),
                     );
 
@@ -163,7 +163,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.red,
+                            color: const Color.fromARGB(255, 0, 238, 255),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Text(
