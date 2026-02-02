@@ -287,7 +287,7 @@ module.exports = async (context) => {
         convDocs.push(...(convRes.documents || []));
       }
 
-      // 3) build response with "other user" name/email as title
+      // 3) build response with "other user" name/email as title and unread count
       const out = [];
 
       for (const convo of convDocs) {
@@ -312,6 +312,16 @@ module.exports = async (context) => {
           }
         }
 
+        // Calculate unread count: messages not read by current user
+        const unreadMsgs = await db.listDocuments(DATABASE_ID, MESSAGES_COL, [
+          sdk.Query.equal("conversationId", convo.$id),
+          sdk.Query.notEqual("senderId", currentUserId),
+          sdk.Query.notEqual("status", "read"),
+          sdk.Query.limit(100), // Limit to avoid performance issues
+        ]);
+
+        const unreadCount = (unreadMsgs.documents || []).length;
+
         out.push({
           $id: convo.$id,
           type: convo.type,
@@ -320,6 +330,7 @@ module.exports = async (context) => {
           lastMessageText: convo.lastMessageText || "No messages",
           lastMessageAt: convo.lastMessageAt,
           lastMessageSenderId: convo.lastMessageSenderId,
+          unreadCount: unreadCount,
         });
       }
 
