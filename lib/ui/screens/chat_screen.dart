@@ -1,7 +1,8 @@
 import 'dart:async';
-import 'package:chat_app_cloud/state/theme_provider.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import 'package:chat_app_cloud/state/theme_provider.dart';
 import '../../services/chat_service.dart';
 import '../../services/appwrite_client.dart';
 import '../../config/environment.dart';
@@ -14,7 +15,7 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final chatService = ChatService();
   final msgController = TextEditingController();
 
@@ -24,46 +25,124 @@ class _ChatScreenState extends State<ChatScreen> {
   String? currentUserId;
   StreamSubscription? _realtimeSub;
 
-  /* ================= MESSAGE STATUS ================= */
-  Widget _buildStatus(Map<String, dynamic> msg) {
-    if (msg['senderId'] != currentUserId) {
-      return const SizedBox(); // seulement pour mes messages
+  // Pour afficher Delivered/Seen uniquement sur le dernier message "à moi"
+  String? _lastMyMessageId;
+
+  // Petit debounce pour éviter d’appeler markRead/markDelivered trop souvent
+  Timer? _markTimer;
+
+  /* ================= HELPERS TIME ================= */
+  String _formatTime(dynamic isoOrDt) {
+    if (isoOrDt == null) return "";
+    try {
+      final dt = DateTime.parse(isoOrDt.toString()).toLocal();
+      final hh = dt.hour.toString().padLeft(2, '0');
+      final mm = dt.minute.toString().padLeft(2, '0');
+      return "$hh:$mm";
+    } catch (_) {
+      return "";
     }
+  }
 
-    final status = msg['status'];
+  String _messageCreatedTime(Map<String, dynamic> msg) {
+    // Ton schéma contient createdAt (datetime) + Appwrite fournit aussi $createdAt
+    final v = msg['createdAt'] ?? msg[r'$createdAt'];
+    return _formatTime(v);
+  }
 
+  /* ================= LAST MY MESSAGE ================= */
+  void _recomputeLastMyMessageId() {
+    if (currentUserId == null) return;
+    for (final m in messages) {
+      if (m['senderId'] == currentUserId) {
+        _lastMyMessageId = m[r'$id']?.toString();
+        return;
+      }
+    }
+    _lastMyMessageId = null;
+  }
+
+  /* ================= MESSAGE STATUS WIDGET ================= */
+  Widget _buildStatusInline(Map<String, dynamic> msg) {
+    if (msg['senderId'] != currentUserId) return const SizedBox();
+
+    final status = (msg['status'] ?? '').toString();
+    // final deliveredAt = msg['deliveredAt'];
+    // final readAt = msg['readAt'];
+
+    
+
+    // Sinon status
     switch (status) {
       case 'sent':
-        return const Text('✓', style: TextStyle(fontSize: 10));
-      case 'delivered':
-        return const Text('✓✓', style: TextStyle(fontSize: 10));
-      case 'read':
-        return const Text('✓✓ Seen', style: TextStyle(fontSize: 10));
+        return Text("✓",
+            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
       case 'sending':
-        return const Text('…', style: TextStyle(fontSize: 10));
+        return Text("…",
+            style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.85)));
       default:
+        // si backend ne met pas status, on ne casse pas l’UI
         return const SizedBox();
     }
+  }
+
+  /// Delivered at / Seen at : uniquement sur le dernier message envoyé par moi
+  Widget _buildDeliveredSeenLines(Map<String, dynamic> msg, bool isLastMine) {
+    if (!isLastMine) return const SizedBox();
+    if (msg['senderId'] != currentUserId) return const SizedBox();
+
+    final deliveredAt = msg['deliveredAt'];
+    final readAt = msg['readAt'];
+
+    final lines = <Widget>[];
+
+    if (deliveredAt != null && deliveredAt.toString().isNotEmpty) {
+      lines.add(
+        Text(
+          "Delivered at ${_formatTime(deliveredAt)}",
+          style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.75)),
+        ),
+      );
+    }
+
+    if (readAt != null && readAt.toString().isNotEmpty) {
+      lines.add(
+        Text(
+          "✓✓ at ${_formatTime(readAt)}",
+          style: TextStyle(fontSize: 11, color: const Color.fromARGB(255, 94, 0, 156).withOpacity(0.75)),
+        ),
+      );
+    }
+
+    if (lines.isEmpty) return const SizedBox();
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: lines),
+    );
   }
 
   /* ================= LOAD MESSAGES ================= */
   Future<void> _loadMessages() async {
     setState(() => loadingMessages = true);
 
-    final res =
-        await chatService.listMessages(conversationId: widget.conversationId);
+    final res = await chatService.listMessages(conversationId: widget.conversationId);
 
     setState(() => loadingMessages = false);
 
+    if (!mounted) return;
+
     if (res['ok'] == true) {
-      final list = res['messages'] as List;
+      final list = (res['messages'] as List? ?? []);
+      // IMPORTANT: on garde l’ordre DESC (plus récent en premier) car tu utilises reverse:true
+      final mapped = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
       setState(() {
-        //msgController.clear();
-        messages = list.map((e) => e as Map<String, dynamic>).toList();
+        messages = mapped;
+        _recomputeLastMyMessageId();
       });
 
-      // Mark messages as read when opening the chat
-      await chatService.markConversationRead(widget.conversationId);
+      // Quand on ouvre, on marque delivered + read
+      _scheduleMarkDeliveredRead();
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(res['error'] ?? 'Failed to load messages')),
@@ -71,97 +150,96 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  /* ================= MARK DELIVERED / READ (debounced) ================= */
+  void _scheduleMarkDeliveredRead() {
+    _markTimer?.cancel();
+    _markTimer = Timer(const Duration(milliseconds: 300), () async {
+      try {
+        await chatService.markConversationDelivered(widget.conversationId);
+        await chatService.markConversationRead(widget.conversationId);
+      } catch (_) {
+        // silencieux (pas de spam UI)
+      }
+    });
+  }
+
   /* ================= REALTIME ================= */
-  // void _subscribeRealtime() {
-  //   _realtimeSub = AppwriteClient.realtime
-  //       .subscribe([
-  //         'databases.${Environment.databaseId}.collections.messages.documents'
-  //       ])
-  //       .stream
-  //       .listen((event) {
-  //         final payload = Map<String, dynamic>.from(event.payload);
-
-  //         if (payload['conversationId'] != widget.conversationId) return;
-
-  //         setState(() {
-  //           // 1️⃣ Cherche un message local équivalent (same text + sender)
-  //           final localIndex = messages.indexWhere((m) =>
-  //               m['isLocal'] == true &&
-  //               m['text'] == payload['text'] &&
-  //               m['senderId'] == payload['senderId']);
-
-  //           if (localIndex != -1) {
-  //             // 🔁 REMPLACE l’optimistic par le vrai message backend
-  //             messages[localIndex] = payload;
-  //             return;
-  //           }
-
-  //           // 2️⃣ Sinon : UPDATE d’un message existant
-  //           final index =
-  //               messages.indexWhere((m) => m['\$id'] == payload['\$id']);
-
-  //           if (index != -1) {
-  //             messages[index] = payload;
-  //             return;
-  //           }
-
-  //           // 3️⃣ Sinon : NOUVEAU message (reçu de l’autre user)
-  //           messages.insert(0, payload);
-  //         });
-  //       });
-  // }
-
   void _subscribeRealtime() {
-  _realtimeSub = AppwriteClient.realtime
-      .subscribe([
-        'databases.${Environment.databaseId}.collections.messages.documents'
-      ])
-      .stream
-      .listen((event) {
-        final payload = Map<String, dynamic>.from(event.payload);
+    _realtimeSub = AppwriteClient.realtime
+        .subscribe([
+          'databases.${Environment.databaseId}.collections.messages.documents',
+        ])
+        .stream
+        .listen((event) {
+          final payload = Map<String, dynamic>.from(event.payload);
 
-        // ⛔ Ignore les autres conversations
-        if (payload['conversationId'] != widget.conversationId) return;
+          if (payload['conversationId'] != widget.conversationId) return;
 
-        setState(() {
-          // 1️⃣ UPDATE : message existe déjà → on met à jour le statut
-          final index =
-              messages.indexWhere((m) => m['\$id'] == payload['\$id']);
+          setState(() {
+            // 1) si on a un optimistic local à remplacer
+            final localIndex = messages.indexWhere((m) =>
+                m['isLocal'] == true &&
+                m['text'] == payload['text'] &&
+                m['senderId'] == payload['senderId']);
 
-          if (index != -1) {
-            messages[index] = payload; // ✅ ICI le status change
-            return;
+            if (localIndex != -1) {
+              // remplace local par doc backend
+              messages[localIndex] = payload..remove('isLocal');
+              _recomputeLastMyMessageId();
+              return;
+            }
+
+            // 2) si c’est une mise à jour d’un message existant (readAt/deliveredAt/status…)
+            final idx = messages.indexWhere((m) => m[r'$id'] == payload[r'$id']);
+            if (idx != -1) {
+              messages[idx] = payload;
+              _recomputeLastMyMessageId();
+              return;
+            }
+
+            // 3) sinon nouveau message
+            messages.insert(0, payload);
+            _recomputeLastMyMessageId();
+          });
+
+          // Si le message vient de l’autre user, on marque delivered/read immédiatement
+          if (payload['senderId'] != null && payload['senderId'] != currentUserId) {
+            _scheduleMarkDeliveredRead();
           }
-
-          // 2️⃣ INSERT : message reçu de l’autre utilisateur
-          messages.insert(0, payload);
         });
-      });
-}
+  }
 
-
-  /* ================= INIT ================= */
+  /* ================= INIT / CLEANUP ================= */
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
   }
 
   Future<void> _init() async {
     final user = await AppwriteClient.account.get();
     currentUserId = user.$id;
+
     await _loadMessages();
-    await chatService.markConversationDelivered(widget.conversationId);
-    await chatService.markConversationRead(widget.conversationId);
     _subscribeRealtime();
   }
 
-  /* ================= CLEANUP ================= */
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _markTimer?.cancel();
     _realtimeSub?.cancel();
     msgController.dispose();
     super.dispose();
+  }
+
+  // Si l’app revient au foreground pendant que tu es sur l’écran, on re-mark read
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _scheduleMarkDeliveredRead();
+    }
   }
 
   /* ================= SEND MESSAGE ================= */
@@ -171,9 +249,9 @@ class _ChatScreenState extends State<ChatScreen> {
 
     msgController.clear();
 
-    // Optimistic UI
-    final optimisticMsg = {
-      '\$id': 'local-${DateTime.now().millisecondsSinceEpoch}',
+    final localId = 'local-${DateTime.now().millisecondsSinceEpoch}';
+    final optimisticMsg = <String, dynamic>{
+      r'$id': localId,
       'text': text,
       'senderId': currentUserId,
       'conversationId': widget.conversationId,
@@ -182,18 +260,27 @@ class _ChatScreenState extends State<ChatScreen> {
       'isLocal': true,
     };
 
-    setState(() => messages.insert(0, optimisticMsg));
+    setState(() {
+      messages.insert(0, optimisticMsg);
+      _recomputeLastMyMessageId();
+    });
 
     final res = await chatService.sendMessage(
       conversationId: widget.conversationId,
       text: text,
     );
 
+    if (!mounted) return;
+
     if (res['ok'] != true) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(res['error'] ?? 'Failed to send message')),
       );
+      return;
     }
+
+    // On NE rajoute pas le message ici (sinon duplication).
+    // Le realtime va remplacer le local par le vrai doc backend.
   }
 
   /* ================= UI ================= */
@@ -228,35 +315,53 @@ class _ChatScreenState extends State<ChatScreen> {
                           final msg = messages[index];
                           final isMe = msg['senderId'] == currentUserId;
 
+                          final msgId = msg[r'$id']?.toString();
+                          final isLastMine = isMe && msgId != null && msgId == _lastMyMessageId;
+
+                          final bubbleColor = isMe ? Colors.blue : Colors.grey.shade300;
+                          final textColor = isMe ? Colors.white : Colors.black87;
+
                           return Align(
-                            alignment: isMe
-                                ? Alignment.centerRight
-                                : Alignment.centerLeft,
+                            alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
                             child: Container(
-                              margin: const EdgeInsets.symmetric(
-                                  vertical: 6, horizontal: 12),
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 10),
-                              constraints: const BoxConstraints(maxWidth: 280),
+                              margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                              constraints: const BoxConstraints(maxWidth: 300),
                               decoration: BoxDecoration(
-                                color:
-                                    isMe ? Colors.blue : Colors.grey.shade300,
+                                color: bubbleColor,
                                 borderRadius: BorderRadius.circular(14),
                               ),
                               child: Column(
-                                crossAxisAlignment: isMe
-                                    ? CrossAxisAlignment.end
-                                    : CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    isMe ? CrossAxisAlignment.end : CrossAxisAlignment.start,
                                 children: [
                                   Text(
                                     msg['text'] ?? '',
-                                    style: TextStyle(
-                                      color:
-                                          isMe ? Colors.white : Colors.black87,
-                                    ),
+                                    style: TextStyle(color: textColor),
                                   ),
-                                  const SizedBox(height: 4),
-                                  _buildStatus(msg), // 👈 ICI
+                                  const SizedBox(height: 6),
+
+                                  // Ligne: heure du message + ticks
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        _messageCreatedTime(msg),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: isMe
+                                              ? Colors.white.withOpacity(0.75)
+                                              : Colors.black54,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      if (isMe) _buildStatusInline(msg),
+                                    ],
+                                  ),
+
+                                  // Lignes Delivered/Seen uniquement sur le dernier message "à moi"
+                                  if (isMe) _buildDeliveredSeenLines(msg, isLastMine),
                                 ],
                               ),
                             ),
