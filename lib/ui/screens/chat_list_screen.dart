@@ -1,12 +1,13 @@
-import 'package:appwrite/appwrite.dart';
-import 'package:chat_app_cloud/services/appwrite_client.dart';
-import 'package:chat_app_cloud/state/session_provider.dart';
+import 'dart:async';
+import 'package:chat_app_cloud/ui/screens/chat_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../services/chat_service.dart';
+import '../../services/appwrite_client.dart';
+import '../../config/environment.dart';
 import '../../state/theme_provider.dart';
-import 'chat_screen.dart';
+
 
 class ChatListScreen extends StatefulWidget {
   const ChatListScreen({super.key});
@@ -19,127 +20,84 @@ class _ChatListScreenState extends State<ChatListScreen> {
   final chatService = ChatService();
 
   List<Map<String, dynamic>> conversations = [];
-  bool loadingConversations = false;
-
   bool loading = false;
-  String? err;
 
-  // ================= INIT =================
-  @override
-  void initState() {
-    super.initState();
-    _loadConversations();
+  StreamSubscription? _realtimeSub;
+
+  /* ================= TIME FORMAT ================= */
+  String _formatTime(String? iso) {
+    if (iso == null || iso.isEmpty) return '';
+    final dt = DateTime.parse(iso).toLocal();
+    return "${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}";
   }
 
-  // ================= LOAD CONVERSATIONS =================
+  /* ================= LOAD ================= */
   Future<void> _loadConversations() async {
-    if (!mounted) return;
-
-    setState(() => loadingConversations = true);
+    setState(() => loading = true);
 
     final res = await chatService.listConversations();
 
-    if (!mounted) return;
-
-    setState(() => loadingConversations = false);
+    setState(() => loading = false);
 
     if (res['ok'] == true) {
-      final list = (res['conversations'] as List)
-          .map((e) => e as Map<String, dynamic>)
-          .toList();
-
-      setState(() => conversations = list);
+      conversations =
+          (res['conversations'] as List).cast<Map<String, dynamic>>();
+      setState(() {});
     } else {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(res['error'] ?? 'Failed to load conversations')),
+        SnackBar(content: Text(res['error'] ?? 'Failed to load chats')),
       );
     }
   }
 
-  // ================= LOGOUT =================
-  Future<void> _logout() async {
-    setState(() {
-      loading = true;
-      err = null;
-    });
-
-    try {
-      await context.read<SessionProvider>().logout();
-    } catch (e) {
-      if (mounted) setState(() => err = e.toString());
-    } finally {
-      if (mounted) setState(() => loading = false);
-    }
+  /* ================= REALTIME ================= */
+  void _subscribeRealtime() {
+    _realtimeSub = AppwriteClient.realtime
+        .subscribe([
+          // New message / delivered / read
+          'databases.${Environment.databaseId}.collections.messages.documents',
+          // lastReadAt updated
+          'databases.${Environment.databaseId}.collections.memberships.documents',
+          // lastMessage updated
+          'databases.${Environment.databaseId}.collections.conversations.documents',
+        ])
+        .stream
+        .listen((_) async {
+          // SAFE & SIMPLE: reload conversations
+          await _loadConversations();
+        });
   }
 
-  // ================= CREATE DM =================
-  Future<void> _openNewDmSheet() async {
-    final emailC = TextEditingController();
+  /* ================= INIT ================= */
+  @override
+  void initState() {
+    super.initState();
+    _loadConversations();
+    _subscribeRealtime();
+  }
 
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                "New DM",
-                style: TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailC,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: "Enter email"),
-              ),
-              const SizedBox(height: 12),
-              ElevatedButton(
-                onPressed: () async {
-                  if (emailC.text.trim().isEmpty) return;
+  /* ================= CLEANUP ================= */
+  @override
+  void dispose() {
+    _realtimeSub?.cancel();
+    super.dispose();
+  }
 
-                  final user = await AppwriteClient.account.get();
-                  final userId = user.$id;
-
-                  final res = await chatService.createDm(
-                    otherEmail: emailC.text.trim(),
-                    userId: userId,
-                  );
-
-                  if (!mounted) return;
-
-                  if (res['ok'] == true) {
-                    Navigator.pop(ctx);
-
-                    // 🔥 RAFRAÎCHIS LA LISTE
-                    await _loadConversations();
-                  } else {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(
-                        content:
-                            Text(res['error'] ?? 'Failed to create DM'),
-                      ),
-                    );
-                  }
-                },
-                child: const Text("Create DM"),
-              ),
-            ],
-          ),
-        );
-      },
+  /* ================= OPEN CHAT ================= */
+  Future<void> _openChat(String conversationId) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatScreen(conversationId: conversationId),
+      ),
     );
+
+    // Safety refresh after return
+    await _loadConversations();
   }
 
-  // ================= UI =================
+  /* ================= UI ================= */
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -148,51 +106,79 @@ class _ChatListScreenState extends State<ChatListScreen> {
         actions: [
           IconButton(
             tooltip: "Toggle theme",
-            onPressed: () =>
-                context.read<ThemeProvider>().toggleDarkLight(),
+            onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
             icon: Icon(
               context.watch<ThemeProvider>().mode == ThemeMode.dark
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
             ),
-          ),
-          IconButton(
-            onPressed: _logout,
-            icon: const Icon(Icons.logout),
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openNewDmSheet,
-        child: const Icon(Icons.add),
-      ),
-      body: loadingConversations
+      body: loading
           ? const Center(child: CircularProgressIndicator())
           : conversations.isEmpty
-              ? const Center(
-                  child: Text("No chats yet. Create a DM above."),
-                )
+              ? const Center(child: Text("No chats yet. Create a DM above."))
               : ListView.builder(
                   itemCount: conversations.length,
                   itemBuilder: (context, index) {
-                    final c = conversations[index];
+                    final convo = conversations[index];
+                    final unread = convo['unreadCount'] ?? 0;
 
                     return ListTile(
-                      title: Text(c['title'] ?? 'DM'),
-                      subtitle:
-                          Text(c['lastMessageText'] ?? 'No messages'),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ChatScreen(conversationId: c['\$id']),
+                      title: Text(convo['title'] ?? 'DM'),
+                      subtitle: Text(
+                        convo['lastMessageText'] ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+
+                      /* ===== RIGHT SIDE (TIME + BADGE) ===== */
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          // ⏱ DeliveredAt / Last message time
+                          Text(
+                            _formatTime(convo['lastMessageAt']),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
                           ),
-                        );
-                      },
+                          const SizedBox(height: 6),
+
+                          // 🔴 New message badge
+                          if (unread > 0)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color.fromARGB(255, 9, 248, 177),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                unread.toString(),
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+
+                      onTap: () => _openChat(convo['\$id']),
                     );
                   },
                 ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () {
+          // ton UI existant pour créer un DM
+        },
+        child: const Icon(Icons.add),
+      ),
     );
   }
 }

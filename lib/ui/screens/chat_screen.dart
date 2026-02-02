@@ -99,7 +99,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (deliveredAt != null && deliveredAt.toString().isNotEmpty) {
       lines.add(
         Text(
-          "Delivered at ${_formatTime(deliveredAt)}",
+          "${_formatTime(deliveredAt)}",
           style: TextStyle(fontSize: 11, color: Colors.white.withOpacity(0.75)),
         ),
       );
@@ -108,7 +108,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (readAt != null && readAt.toString().isNotEmpty) {
       lines.add(
         Text(
-          "✓✓ at ${_formatTime(readAt)}",
+          "${_formatTime(readAt)} ✓✓",
           style: TextStyle(fontSize: 11, color: const Color.fromARGB(255, 94, 0, 156).withOpacity(0.75)),
         ),
       );
