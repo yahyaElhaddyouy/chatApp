@@ -29,6 +29,12 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   String? currentUserId;
   StreamSubscription? _realtimeSub;
+  StreamSubscription? _typingSub;
+
+  Timer? _typingDebounce;
+  bool _iAmTyping = false;
+  bool otherTyping = false;
+  String? otherUserId; // si tu l’as déjà
 
   // Pour afficher Delivered/Seen uniquement sur le dernier message "à moi"
   String? _lastMyMessageId;
@@ -219,6 +225,54 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             _scheduleMarkDeliveredRead();
           }
         });
+
+    // 2eme subscription typing service
+    // 🔴 TYPING REALTIME (AJOUTE ÇA)
+    _typingSub = AppwriteClient.realtime
+        .subscribe([
+          'databases.${Environment.databaseId}.collections.typing.documents',
+        ])
+        .stream
+        .listen((event) {
+          final payload = Map<String, dynamic>.from(event.payload);
+
+          if (payload['conversationId'] != widget.conversationId) return;
+          if (payload['userId'] == currentUserId) return;
+
+          setState(() {
+            otherTyping = payload['isTyping'] == true;
+          });
+        });
+  }
+
+  /* ================= Typing  Function ================= */
+  void _onTypingChanged() {
+    final text = msgController.text.trim();
+    final nowTyping = text.isNotEmpty;
+
+    if (nowTyping == _iAmTyping) return;
+    _iAmTyping = nowTyping;
+
+    // debounce pour éviter spam backend
+    _typingDebounce?.cancel();
+    _typingDebounce = Timer(const Duration(milliseconds: 250), () {
+      chatService.setTyping(
+        conversationId: widget.conversationId,
+        isTyping: _iAmTyping,
+      );
+    });
+
+    // auto stop après 2s sans frappe
+    if (_iAmTyping) {
+      _typingDebounce?.cancel();
+      _typingDebounce = Timer(const Duration(seconds: 2), () {
+        _iAmTyping = false;
+        chatService.setTyping(
+          conversationId: widget.conversationId,
+          isTyping: false,
+        );
+      });
+    }
   }
 
   /* ================= INIT / CLEANUP ================= */
@@ -235,6 +289,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
     await _loadMessages();
     _subscribeRealtime();
+    msgController.addListener(_onTypingChanged);
   }
 
   @override
@@ -243,6 +298,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _markTimer?.cancel();
     _realtimeSub?.cancel();
     msgController.dispose();
+    _typingDebounce?.cancel();
+    msgController.removeListener(_onTypingChanged);
     super.dispose();
   }
 
@@ -300,15 +357,76 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.otherUserName),
+        elevation: 0,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            const SizedBox(width: 8),
+            // Avatar
+            CircleAvatar(
+              radius: 20,
+              backgroundColor:
+                  Theme.of(context).colorScheme.primary.withOpacity(0.15),
+              child: Text(
+                widget.otherUserName.isNotEmpty
+                    ? widget.otherUserName[0].toUpperCase()
+                    : '?',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+
+            const SizedBox(width: 12),
+
+            // Name + typing
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    widget.otherUserName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    child: otherTyping
+                        ? Text(
+                            "typing…",
+                            key: const ValueKey("typing"),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .primary
+                                  .withOpacity(0.8),
+                            ),
+                          )
+                        : const SizedBox(
+                            key: ValueKey("empty"),
+                            height: 14,
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
         actions: [
           IconButton(
             tooltip: "Toggle theme",
             onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
             icon: Icon(
-              context.watch<ThemeProvider>().mode == ThemeMode.light
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
+              context.watch<ThemeProvider>().mode == ThemeMode.dark
+                  ? Icons.light_mode
+                  : Icons.dark_mode,
             ),
           ),
         ],

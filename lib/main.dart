@@ -39,9 +39,9 @@ class App extends StatelessWidget {
       return MaterialApp(
         debugShowCheckedModeBanner: false,
         title: 'DM Test',
-        theme: AppTheme.light(),
-        darkTheme: AppTheme.dark(),
-        themeMode: theme.mode,
+        theme: ThemeData.light(),
+          darkTheme: ThemeData.dark(),
+          themeMode: theme.mode, // ✅ l’app écoute le mode ici
         home: const LoadingScreen(),
       );
     }

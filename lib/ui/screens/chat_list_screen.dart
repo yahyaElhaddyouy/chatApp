@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:appwrite/appwrite.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -25,13 +26,31 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   String? currentUserId;
   StreamSubscription? _realtimeSub;
+  String? _myName;
 
   bool loadingLogout = false;
   String? err;
 
+  Future<void> _loadMe() async {
+    try {
+      final user = await AppwriteClient.account.get();
+
+      setState(() {
+        // priorité au name, sinon email
+        _myName = user.name.isNotEmpty ? user.name : user.email;
+      });
+    } catch (e) {
+      // fallback
+      setState(() {
+        _myName = '?';
+      });
+    }
+  }
+
   @override
   void initState() {
     super.initState();
+    _loadMe();
     _init();
   }
 
@@ -42,8 +61,6 @@ class _ChatListScreenState extends State<ChatListScreen> {
     await _loadConversations();
     _subscribeRealtime();
   }
-
-  
 
   Future<void> _loadConversations() async {
     setState(() => loadingConversations = true);
@@ -57,7 +74,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
     if (res['ok'] == true) {
       final list = (res['conversations'] as List? ?? []);
       setState(() {
-        conversations = list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        conversations =
+            list.map((e) => Map<String, dynamic>.from(e as Map)).toList();
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -86,10 +104,12 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
             // update last message
             convo['lastMessageText'] = payload['text'] ?? '';
-            convo['lastMessageAt'] = payload['createdAt'] ?? payload[r'$createdAt'];
+            convo['lastMessageAt'] =
+                payload['createdAt'] ?? payload[r'$createdAt'];
 
             // unread++ only if message from other user AND you are on list screen
-            if (payload['senderId'] != null && payload['senderId'] != currentUserId) {
+            if (payload['senderId'] != null &&
+                payload['senderId'] != currentUserId) {
               convo['unreadCount'] = (convo['unreadCount'] ?? 0) + 1;
             }
 
@@ -178,7 +198,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     );
                   } else {
                     ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text(res['error'] ?? 'Failed to create DM')),
+                      SnackBar(
+                          content: Text(res['error'] ?? 'Failed to create DM')),
                     );
                   }
                 },
@@ -203,25 +224,73 @@ class _ChatListScreenState extends State<ChatListScreen> {
       appBar: AppBar(
         title: const Text("Chats"),
         actions: [
-          IconButton(
-            tooltip: "Toggle theme",
-            onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
-            icon: Icon(
-              context.watch<ThemeProvider>().mode == ThemeMode.light
-                  ? Icons.dark_mode
-                  : Icons.light_mode,
+          PopupMenuButton<String>(
+            offset: const Offset(0, 50),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-          ),
-          IconButton(
-            tooltip: "Logout",
-            onPressed: loadingLogout ? null : _logout,
-            icon: loadingLogout
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.logout),
+            onSelected: (value) async {
+              switch (value) {
+                case 'profile':
+                  // TODO: navigate to profile screen
+                  break;
+
+                case 'theme':
+                  context.read<ThemeProvider>().toggleDarkLight();
+                  break;
+
+                case 'logout':
+                  await _logout();
+                  break;
+              }
+            },
+
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'profile',
+                child: ListTile(
+                  leading: Icon(Icons.person),
+                  title: Text('Profile'),
+                ),
+              ),
+              const PopupMenuItem(
+                value: 'theme',
+                child: ListTile(
+                  leading: Icon(Icons.brightness_6),
+                  title: Text('Toggle theme'),
+                ),
+              ),
+              const PopupMenuDivider(),
+              const PopupMenuItem(
+                value: 'logout',
+                child: ListTile(
+                  leading: Icon(Icons.logout, color: Colors.red),
+                  title: Text(
+                    'Logout',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ),
+            ],
+
+            // 👇 AVATAR BUTTON
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: CircleAvatar(
+                radius: 18,
+                backgroundColor:
+                    Theme.of(context).colorScheme.primary.withOpacity(0.15),
+                child: Text(
+                  (_myName != null && _myName!.isNotEmpty)
+                      ? _myName![0].toUpperCase()
+                      : '?',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -242,7 +311,8 @@ class _ChatListScreenState extends State<ChatListScreen> {
                     final title = (convo['title'] ?? 'DM').toString();
                     final otherUserId = (convo['otherUserId'] ?? '').toString();
 
-                    final lastText = (convo['lastMessageText'] ?? '').toString();
+                    final lastText =
+                        (convo['lastMessageText'] ?? '').toString();
                     final lastAt = convo['lastMessageAt'];
                     final unread = (convo['unreadCount'] ?? 0) as int;
 
@@ -264,14 +334,16 @@ class _ChatListScreenState extends State<ChatListScreen> {
                           const SizedBox(height: 6),
                           if (unread > 0)
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
                               decoration: BoxDecoration(
                                 color: const Color.fromARGB(255, 0, 255, 170),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Text(
                                 unread.toString(),
-                                style: const TextStyle(color: Colors.white, fontSize: 11),
+                                style: const TextStyle(
+                                    color: Colors.white, fontSize: 11),
                               ),
                             ),
                         ],

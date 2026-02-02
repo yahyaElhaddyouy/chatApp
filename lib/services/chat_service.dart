@@ -111,11 +111,55 @@ class ChatService {
       return null;
     }
   }
-   // Mark conversation as delivered (updates membership.lastReadAt or similar)
+
+  Future<String?> getUserName() async {
+    try {
+      final account = Account(AppwriteClient.client);
+      final user = await account.get(); // Get the current logged-in user
+      return user.name; // Return the user ID
+    } catch (e) {
+      print('Error fetching user info: $e');
+      return null;
+    }
+  }
+
+
+  // Mark conversation as delivered (updates membership.lastReadAt or similar)
   Future<void> markConversationDelivered(String conversationId) async {
-  await _call({
-    "action": "markDelivered",
-    "conversationId": conversationId,
-  });
-}
+    await _call({
+      "action": "markDelivered",
+      "conversationId": conversationId,
+    });
+
+    ///// set typing service function
+    // Future<Future<Map<String, dynamic>>> setTyping({
+    //   required String conversationId,
+    //   required bool isTyping,
+    // }) async {
+    //   return _call({
+    //     "action": "setTyping",
+    //     "conversationId": conversationId,
+    //     "isTyping": isTyping,
+    //   });
+    // }
+
+    /// get typing service function
+    Future<Future<Map<String, dynamic>>> getTyping({
+      required String conversationId,
+    }) async {
+      return _call({
+        "action": "getTyping",
+        "conversationId": conversationId,
+      });
+    }
+  }
+
+  Future<Future<Map<String, dynamic>>> setTyping(
+      {required String conversationId, required bool isTyping}) async {
+    return _call({
+      "action": "setTyping",
+      "conversationId": conversationId,
+      "isTyping": isTyping,
+    });
+  }
 }

@@ -527,6 +527,42 @@ module.exports = async (context) => {
       return json(200, { ok: true });
     }
 
+    /* ================== ACTION: setTyping ================== */
+    if (action === "setTyping") {
+      const { conversationId, isTyping } = body;
+
+      if (!conversationId) return json(400, { ok: false, error: "MISSING_CONVERSATION" });
+      if (typeof isTyping !== "boolean") return json(400, { ok: false, error: "MISSING_ISTYPING" });
+
+      const userId = currentUserId; // from header/session
+
+      // find existing typing doc
+      const existing = await db.listDocuments(DATABASE_ID, "typing", [
+        sdk.Query.equal("conversationId", conversationId),
+        sdk.Query.equal("userId", userId),
+        sdk.Query.limit(1),
+      ]);
+
+      const nowIso = new Date().toISOString();
+
+      if ((existing.documents || []).length > 0) {
+        const doc = existing.documents[0];
+        const updated = await db.updateDocument(DATABASE_ID, "typing", doc.$id, {
+          isTyping,
+          updatedAt: nowIso,
+        });
+        return json(200, { ok: true, typing: updated });
+      } else {
+        const created = await db.createDocument(DATABASE_ID, "typing", sdk.ID.unique(), {
+          conversationId,
+          userId,
+          isTyping,
+          updatedAt: nowIso,
+        });
+        return json(200, { ok: true, typing: created });
+      }
+    }
+
 
     return json(404, { ok: false, error: "UNKNOWN_ACTION", action });
 
