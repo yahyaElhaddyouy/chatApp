@@ -9,11 +9,11 @@ import '../../config/environment.dart';
 
 class ChatScreen extends StatefulWidget {
   final String conversationId;
-  final String otherUserId; // ✅ NEW
+  final String otherUserName; // ✅ NEW
   const ChatScreen({
     super.key,
     required this.conversationId,
-    required this.otherUserId,
+    required this.otherUserName,
   });
 
   @override
@@ -300,15 +300,15 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.otherUserId),
+        title: Text(widget.otherUserName),
         actions: [
           IconButton(
             tooltip: "Toggle theme",
             onPressed: () => context.read<ThemeProvider>().toggleDarkLight(),
             icon: Icon(
-              context.watch<ThemeProvider>().mode == ThemeMode.dark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
+              context.watch<ThemeProvider>().mode == ThemeMode.light
+                  ? Icons.dark_mode
+                  : Icons.light_mode,
             ),
           ),
         ],
